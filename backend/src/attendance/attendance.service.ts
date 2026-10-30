@@ -30,7 +30,7 @@ export class AttendanceService {
 
   /** Modo local/mock: sin AWS Rekognition (dev). */
   private get isMock(): boolean {
-    return (this.cfg.get('FACE_PROVIDER') ?? 'rekognition') === 'mock';
+    return (this.cfg.get('FACE_PROVIDER') ?? 'mock') === 'mock';
   }
 
   /** Registro individual (check-in / check-out). */

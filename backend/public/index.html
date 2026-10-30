@@ -153,7 +153,7 @@
 
 <script>
 let token = localStorage.getItem('asistencia_token') || '';
-let user = null;
+let user = JSON.parse(localStorage.getItem('asistencia_user') || 'null');
 let photoBlob = null;
 let videoStream = null;
 let gps = null;
@@ -176,7 +176,14 @@ async function login(){
   try{
     const r=await fetch('/api/v1/auth/login-cedula',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cedula,secret})});
     const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error de login');
-    token=j.accessToken; user=j.user; localStorage.setItem('asistencia_token',token);
+    token=j.accessToken; user=j.user; localStorage.setItem('asistencia_token',token); localStorage.setItem('asistencia_user',JSON.stringify(user));
+    const employeeSelect=document.getElementById('emp');
+    if(user.role==='EMPLOYEE'){
+      employeeSelect.value=user.id;
+      employeeSelect.disabled=true;
+    }else{
+      employeeSelect.disabled=false;
+    }
     msg('loginMsg','Bienvenido/a '+(user.name||cedula)+' (rol '+user.role+')','ok');
     document.getElementById('loginCard').style.display='none';
     document.getElementById('dash').style.display='block';
@@ -203,7 +210,8 @@ function renderStats(rep){
 
 async function loadReport(){
   msg('repMsg','Cargando reporte…');
-  const emp=document.getElementById('emp').value, year=document.getElementById('year').value, month=document.getElementById('month').value;
+  const emp=user?.role==='EMPLOYEE' ? user.id : document.getElementById('emp').value;
+  const year=document.getElementById('year').value, month=document.getElementById('month').value;
   try{
     const r=await fetch(`/api/v1/reports/monthly/${emp}?year=${year}&month=${month}`,{headers:{'Authorization':'Bearer '+token}});
     const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error');
@@ -280,7 +288,7 @@ async function mark(type){
 }
 
 health();
-if(token){ document.getElementById('loginCard').style.display='none'; document.getElementById('dash').style.display='block'; renderStats(null); loadReport(); startLocation(); }
+if(token && user){ document.getElementById('loginCard').style.display='none'; document.getElementById('dash').style.display='block'; const employeeSelect=document.getElementById('emp'); if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; } renderStats(null); loadReport(); startLocation(); }
 </script>
 </body>
 </html>
