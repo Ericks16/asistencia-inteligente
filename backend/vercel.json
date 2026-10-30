@@ -5,6 +5,7 @@
       "maxDuration": 60
     }
   },
+  "installCommand": "pnpm install --frozen-lockfile && pnpm prisma:generate",
   "buildCommand": "pnpm build",
   "crons": [
     {
