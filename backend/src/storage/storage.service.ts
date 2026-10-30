@@ -33,7 +33,9 @@ export class StorageService {
     }
     this.provider = provider;
     this.bucket = config.get('AWS_S3_BUCKET') ?? '';
-    this.localDir = resolve(config.get('PHOTO_LOCAL_DIR') ?? './data/photos');
+    const configuredLocalDir = config.get('PHOTO_LOCAL_DIR');
+    const vercelTempDir = process.env.VERCEL ? '/tmp/asistencia-fotos' : './data/photos';
+    this.localDir = resolve(configuredLocalDir ?? vercelTempDir);
     this.encryptionKey = this.readEncryptionKey();
 
     if (this.provider === 's3') {
