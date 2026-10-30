@@ -7,6 +7,10 @@ import { mkdir, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { encryptAes256Gcm } from '../attendance/crypto.util';
 
+type AwsCommandClient = {
+  send<Input extends object, Output extends object>(command: Input): Promise<Output>;
+};
+
 export interface StoredPhoto {
   key: string;
   hash: string;
@@ -19,6 +23,7 @@ export class StorageService {
   private readonly bucket: string;
   private readonly localDir: string;
   private readonly s3?: S3Client;
+  private readonly s3Commands?: AwsCommandClient;
   private readonly encryptionKey: Buffer;
 
   constructor(private readonly config: ConfigService) {
@@ -33,11 +38,13 @@ export class StorageService {
 
     if (this.provider === 's3') {
       if (!this.bucket) throw new Error('AWS_S3_BUCKET es obligatorio con PHOTO_STORAGE_PROVIDER=s3');
-      this.s3 = new S3Client({
+      const client = new S3Client({
         region: config.get('AWS_REGION') ?? 'us-east-1',
         endpoint: config.get('S3_ENDPOINT') || undefined,
         forcePathStyle: config.get('S3_FORCE_PATH_STYLE') === 'true',
       });
+      this.s3 = client;
+      this.s3Commands = client as AwsCommandClient;
     }
   }
 
@@ -49,7 +56,7 @@ export class StorageService {
     const encryptedBytes = Buffer.from(JSON.stringify(encrypted), 'utf8');
 
     if (this.provider === 's3') {
-      await this.s3!.send(new PutObjectCommand({
+      await this.s3Commands!.send<PutObjectCommand, object>(new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: encryptedBytes,
@@ -67,7 +74,9 @@ export class StorageService {
 
   async deletePhoto(key: string): Promise<void> {
     if (this.provider === 's3') {
-      await this.s3!.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+      await this.s3Commands!.send<DeleteObjectCommand, object>(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
       return;
     }
     try {

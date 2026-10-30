@@ -3,9 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import {
   RekognitionClient,
   DetectFacesCommand,
+  DetectFacesCommandOutput,
   CompareFacesCommand,
+  CompareFacesCommandOutput,
   GetFaceLivenessSessionResultsCommand,
+  GetFaceLivenessSessionResultsCommandOutput,
 } from '@aws-sdk/client-rekognition';
+
+type AwsCommandClient = {
+  send<Input extends object, Output extends object>(command: Input): Promise<Output>;
+};
 
 export interface DetectedFace {
   index: number;
@@ -35,16 +42,21 @@ export interface IFaceRecognition {
  */
 @Injectable()
 export class RekognitionFaceService implements IFaceRecognition {
-  private readonly client: RekognitionClient;
+  private readonly client: AwsCommandClient;
   private readonly threshold: number;
 
   constructor(cfg: ConfigService) {
-    this.client = new RekognitionClient({ region: cfg.get('AWS_REGION') ?? 'us-east-1' });
+    this.client = new RekognitionClient({
+      region: cfg.get('AWS_REGION') ?? 'us-east-1',
+    }) as AwsCommandClient;
     this.threshold = Number(cfg.get('FACE_MATCH_THRESHOLD') ?? 0.95);
   }
 
   async detectFaces(imageBytes: Buffer): Promise<DetectedFace[]> {
-    const res = await this.client.send(
+    const res = await this.client.send<
+      DetectFacesCommand,
+      DetectFacesCommandOutput
+    >(
       new DetectFacesCommand({ Image: { Bytes: imageBytes }, Attributes: ['ALL'] }),
     );
     return (res.FaceDetails ?? []).map((f, index) => ({
@@ -61,7 +73,10 @@ export class RekognitionFaceService implements IFaceRecognition {
   async compareFace(imageBytes: Buffer, targetImageRef: string): Promise<MatchResult> {
     // targetImageRef apunta a la foto de referencia cifrada en S3; se resuelve a
     // una URL firmada o se descarga/descifra antes de comparar.
-    const res = await this.client.send(
+    const res = await this.client.send<
+      CompareFacesCommand,
+      CompareFacesCommandOutput
+    >(
       new CompareFacesCommand({
         SourceImage: { Bytes: imageBytes },
         TargetImage: { S3Object: { Bucket: process.env.AWS_S3_BUCKET, Name: targetImageRef } },
@@ -74,7 +89,10 @@ export class RekognitionFaceService implements IFaceRecognition {
   }
 
   async verifyLiveness(sessionId: string): Promise<LivenessResult> {
-    const res = await this.client.send(
+    const res = await this.client.send<
+      GetFaceLivenessSessionResultsCommand,
+      GetFaceLivenessSessionResultsCommandOutput
+    >(
       new GetFaceLivenessSessionResultsCommand({ SessionId: sessionId }),
     );
     const confidence = res.Confidence ?? 0;
