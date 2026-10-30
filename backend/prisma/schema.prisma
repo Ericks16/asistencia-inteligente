@@ -1,0 +1,430 @@
+// ============================================================================
+// Sistema de Control de Asistencia Inteligente — Esquema Prisma (PostgreSQL + pgvector)
+// Stack: PostgreSQL 16 + Prisma + pgvector
+// Notas:
+//  - `vector(512)` usa el tipo `Unsupported` de Prisma para pgvector.
+//  - Los datos biométricos (embeddings) viven aquí; las fotos viven en S3 (solo `ref`).
+//  - Timestamps se guardan en UTC; el cálculo de horas se hace en America/Guayaquil.
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  EMPLOYEE
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AttendanceType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum AttendanceStatus {
+  PENDING      // pendiente de validación (liveness/match en cola)
+  VALID        // validado y contabilizado
+  REJECTED     // rechazado por score bajo / liveness fallido
+  MANUAL       // corregido manualmente por admin
+  DUPLICATE    // marca duplicada (no contabiliza)
+}
+
+enum AttendanceSource {
+  INDIVIDUAL
+  GROUP
+  MANUAL
+}
+
+enum OvertimeType {
+  EARLY_ENTRY  // entró antes de la hora oficial
+  LATE_EXIT    // salió después de la hora oficial
+}
+
+enum VerificationMethod {
+  AWS_REKOGNITION
+  FACENET_PGVECTOR
+  MANUAL
+}
+
+enum GroupSessionStatus {
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum MonthlyReportStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  CHECK_IN
+  CHECK_OUT
+  CHECK_IN_GROUP
+  ATTENDANCE_EDIT
+  USER_CREATE
+  USER_UPDATE
+  USER_DEACTIVATE
+  SCHEDULE_UPDATE
+  REPORT_EXPORT
+  FACE_ENROLLMENT
+  FACE_DELETE
+  SETTINGS_UPDATE
+  SECURITY_EVENT
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios, perfiles y organización
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(uuid())
+  cedula       String     @unique // Documento Nacional de Identidad (login)
+  email        String?    @unique
+  phone        String?
+  passwordHash String?    // Argon2id (se usa si no es solo PIN)
+  pinHash      String?    // hash del PIN inicial (Argon2id)
+  mustChangePin Boolean   @default(true)
+
+  role        Role       @default(EMPLOYEE)
+  status      UserStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  lastLoginAt DateTime?
+
+  profile      EmployeeProfile?
+  faceEmbedding FaceEmbedding?
+  attendanceLogs AttendanceLog[]
+  groupSessionsInitiated GroupAttendanceSession[]
+  groupMatches           GroupAttendanceMatch[]
+  overtimeRecords        OvertimeRecord[]
+  adjustmentsMade        AttendanceAdjustment[]
+  refreshTokens  RefreshToken[]
+  devices        Device[]
+  monthlyReports MonthlyReport[]
+  auditLogs      AuditLog[]   @relation("Actor")
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model EmployeeProfile {
+  id           String  @id @default(uuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName    String
+  lastName     String
+  birthDate    DateTime?
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  position     String?
+  hireDate     DateTime?
+  avatarRef    String? // S3 key
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_profiles")
+}
+
+model Department {
+  id        String  @id @default(uuid())
+  name      String  @unique
+  code      String? @unique
+  parentId  String?
+  parent    Department? @relation("DeptTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptTree")
+
+  profiles  EmployeeProfile[]
+  schedules WorkSchedule[]
+
+  @@map("departments")
+}
+
+// ---------------------------------------------------------------------------
+// Horarios / parametrización
+// ---------------------------------------------------------------------------
+
+model WorkSchedule {
+  id           String  @id @default(uuid())
+  name         String
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  // Valores por defecto de la jornada (configurables por administrador)
+  officialEntry String @default("08:00")
+  officialExit  String @default("17:00")
+  lunchStart    String @default("12:00")
+  lunchEnd      String @default("13:00")
+  lunchMinutes  Int    @default(60)
+  ordinaryMinutes Int  @default(480) // 8 h efectivas
+  graceMinutes  Int    @default(5)   // tolerancia de atraso
+  timezone      String @default("America/Guayaquil")
+  workDays      Int[]  @default([1, 2, 3, 4, 5]) // ISO: 1=Lunes..5=Viernes
+
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("work_schedules")
+}
+
+// ---------------------------------------------------------------------------
+// Biometría (embeddings faciales)
+// ---------------------------------------------------------------------------
+
+model FaceEmbedding {
+  id         String  @id @default(uuid())
+  userId     String  @unique
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vector     Unsupported("vector(512)")? // embedding facial (pgvector)
+  photoRef   String?                      // S3 key de la foto de referencia (cifrada)
+  modelName  String  @default("rekognition") // rekognition | facenet
+  version    Int     @default(1)
+  isPrimary  Boolean @default(true)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isPrimary])
+  @@map("face_embeddings")
+}
+
+// ---------------------------------------------------------------------------
+// Dispositivos y sesiones
+// ---------------------------------------------------------------------------
+
+model Device {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String   @unique // UUID anónimo del dispositivo
+  platform     String   // ios | android
+  model        String?
+  isTrusted    Boolean  @default(false)
+  lastSeenAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@map("devices")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Asistencia individual y grupal
+// ---------------------------------------------------------------------------
+
+model AttendanceLog {
+  id           String         @id @default(uuid())
+  employeeId   String
+  employee     User           @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  type         AttendanceType
+  status       AttendanceStatus @default(PENDING)
+  source       AttendanceSource @default(INDIVIDUAL)
+  verification VerificationMethod?
+
+  // Foto (referencia + hash, nunca imagen en claro)
+  photoRef       String?  // S3 key cifrada
+  photoHash      String?  // SHA-256 de los bytes originales (inmutabilidad)
+  watermarkRef   String?
+
+  // Geolocalización
+  gpsLat         Float?
+  gpsLng         Float?
+  gpsAccuracyM   Float?
+  gpsProvider    String?
+  gpsIsMock      Boolean @default(false)
+  gpsInsideGeofence Boolean @default(true)
+
+  // Tiempos
+  clientTimestamp DateTime?
+  serverTimestamp DateTime  @default(now()) // hora autoritativa
+  workDate        DateTime  // fecha local (America/Guayaquil) para agrupación diaria
+
+  // Validación facial
+  livenessScore   Float?
+  faceMatchScore  Float?
+  faceCount       Int?
+
+  // Anti-replay
+  nonceUsed       String? @unique
+  deviceId        String?
+  ipAddress       String?
+  userAgent       String?
+
+  // Grupal
+  groupSessionId  String?
+  groupSession    GroupAttendanceSession? @relation(fields: [groupSessionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adjustments AttendanceAdjustment[]
+  overtimeRecords OvertimeRecord[]
+  groupMatches GroupAttendanceMatch[]
+
+  @@index([employeeId, workDate])
+  @@index([workDate, type])
+  @@index([status])
+  @@map("attendance_logs")
+}
+
+model GroupAttendanceSession {
+  id          String            @id @default(uuid())
+  initiatorId String
+  initiator   User              @relation(fields: [initiatorId], references: [id])
+
+  photoRef     String?
+  photoHash    String?
+  gpsLat       Float?
+  gpsLng       Float?
+  gpsAccuracyM Float?
+  gpsIsMock    Boolean @default(false)
+
+  totalFacesDetected Int     @default(0)
+  totalMatched       Int     @default(0)
+  status             GroupSessionStatus @default(PROCESSING)
+  serverTimestamp    DateTime @default(now())
+
+  matches GroupAttendanceMatch[]
+  logs    AttendanceLog[]
+  createdAt DateTime @default(now())
+
+  @@map("group_attendance_sessions")
+}
+
+model GroupAttendanceMatch {
+  id             String  @id @default(uuid())
+  sessionId      String
+  session        GroupAttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  employeeId     String?
+  employee       User?   @relation(fields: [employeeId], references: [id])
+
+  attendanceLogId String?
+  attendanceLog   AttendanceLog? @relation(fields: [attendanceLogId], references: [id])
+
+  faceIndex     Int     // índice del rostro en la imagen
+  boundingBox   Json    // {left,top,width,height}
+  matchScore    Float?
+  matched       Boolean @default(false)
+
+  @@map("group_attendance_matches")
+}
+
+// ---------------------------------------------------------------------------
+// Horas extras y correcciones
+// ---------------------------------------------------------------------------
+
+model OvertimeRecord {
+  id             String       @id @default(uuid())
+  employeeId     String
+  employee       User         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  workDate       DateTime
+  type           OvertimeType
+  minutes        Int          @default(0)
+  sourceLogId    String?
+  sourceLog      AttendanceLog? @relation(fields: [sourceLogId], references: [id])
+  calculatedAt   DateTime     @default(now())
+
+  @@index([employeeId, workDate])
+  @@map("overtime_records")
+}
+
+model AttendanceAdjustment {
+  id            String  @id @default(uuid())
+  attendanceLogId String
+  attendanceLog  AttendanceLog @relation(fields: [attendanceLogId], references: [id], onDelete: Cascade)
+  adminId       String
+  admin         User    @relation(fields: [adminId], references: [id])
+  reason        String
+  oldValue      Json
+  newValue      Json
+  createdAt     DateTime @default(now())
+
+  @@map("attendance_adjustments")
+}
+
+// ---------------------------------------------------------------------------
+// Reportes mensuales
+// ---------------------------------------------------------------------------
+
+model MonthlyReport {
+  id          String             @id @default(uuid())
+  employeeId  String
+  employee    User               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  year        Int
+  month       Int                // 1..12
+  status      MonthlyReportStatus @default(DRAFT)
+
+  daysWorked        Int    @default(0)
+  absences          Int    @default(0)
+  lateArrivalsCount Int    @default(0)
+  totalOrdinaryMinutes Int @default(0)
+  totalOvertimeMinutes Int @default(0)
+
+  detail     Json?  // detalle diario con foto, mapa GPS y estado de validación
+  generatedAt DateTime @default(now())
+
+  @@unique([employeeId, year, month])
+  @@map("monthly_reports")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría (append-only)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String     @id @default(uuid())
+  actorId    String?
+  actor      User?      @relation("Actor", fields: [actorId], references: [id])
+  action     AuditAction
+  entity     String
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  chainHash  String?    // hash encadenado (append-only)
+  prevHash   String?
+  createdAt  DateTime   @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}

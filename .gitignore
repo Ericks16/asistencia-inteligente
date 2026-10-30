@@ -1,0 +1,27 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.next/
+
+# Local database and photo storage
+backend/data/
+**/data/
+
+# Local TLS certificates and generated keys
+backend/certs/*.pfx
+backend/certs/*.key
+backend/certs/*.pem
+backend/certs/*.cer
+
+# Logs and local tooling
+*.log
+.vercel/
+coverage/
+*.tsbuildinfo

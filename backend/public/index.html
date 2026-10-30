@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de Asistencia Inteligente</title>
+<style>
+  :root{
+    --bg:#082E39;         /* verde azulado oscuro (empresa) */
+    --card:#0C3A48;       /* verde azulado medio */
+    --accent:#F15022;     /* naranja coral */
+    --teal:#00B197;       /* verde azulado */
+    --lime:#C2CE24;       /* lima */
+    --txt:#f2f7f7;
+    --muted:#9fb8bd;
+    --border:#1b5563;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;padding:24px}
+  .wrap{max-width:980px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{height:46px;width:auto}
+  h1{font-size:20px;font-weight:700}
+  .badge{font-size:12px;padding:6px 12px;border-radius:999px;background:var(--card);border:1px solid var(--border);display:inline-flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--teal);display:inline-block}.dot.off{background:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
+  h2{font-size:17px;margin-bottom:14px}
+  .login-grid{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+  .login-form{flex:1;min-width:280px}
+  .login-mascot{flex:0 0 auto}
+  .login-mascot img{height:150px;width:auto;display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:26px;font-weight:700;margin-top:6px}.stat .v small{font-size:13px;color:var(--muted);font-weight:400}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input,select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:#062630;color:var(--txt);font-size:14px}
+  button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px 16px;font-weight:700;font-size:14px;cursor:pointer;transition:.15s;margin:4px}
+  button:hover{filter:brightness(1.12)}button:disabled{opacity:.5;cursor:not-allowed}
+  button.green{background:var(--teal)}button.amber{background:var(--lime);color:#082E39}button.ghost{background:transparent;border:1px solid var(--border);color:var(--txt)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.row>div{flex:1;min-width:180px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .tag{padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600}
+  .tag.ok{background:#063d33;color:#4ade80}.tag.late{background:#5a2a12;color:#fbbf24}.tag.missing{background:#3b0764;color:#c084fc}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .users{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .chip{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:#062630;cursor:pointer;color:var(--txt)}
+  .chip:hover{border-color:var(--accent)}
+  .msg{margin-top:12px;font-size:13px}.msg.err{color:#f87171}.msg.ok{color:#4ade80}
+  code{background:#062630;padding:2px 6px;border-radius:4px;font-size:12px}
+  .cam{display:flex;gap:16px;flex-wrap:wrap}
+  video{width:100%;max-width:380px;border-radius:12px;background:#000;transform:scaleX(-1);border:1px solid var(--border)}
+  canvas{display:none}
+  .thumb{width:120px;height:90px;object-fit:cover;border-radius:10px;border:1px solid var(--border);background:#000}
+  .gpsbox{background:#062630;border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;line-height:1.7;flex:1;min-width:220px}
+  .gpsbox .live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal);margin-right:6px;animation:blink 1.2s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .warn{background:#5a2a12;color:#fbbf24;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <img src="/logo.jpg" alt="Logo de la empresa">
+      <h1>Control de Asistencia Inteligente</h1>
+    </div>
+    <span class="badge"><span class="dot" id="dot"></span><span id="healthText">verificando…</span></span>
+  </header>
+
+  <!-- Login -->
+  <div class="card" id="loginCard">
+    <div class="login-grid">
+      <div class="login-form">
+        <h2>Iniciar sesión</h2>
+        <label>Cédula (Documento de Identidad)</label>
+        <input id="cedula" placeholder="1712345678">
+        <label>PIN</label>
+        <input id="pin" type="password" placeholder="1234">
+        <div class="users">
+          <span class="chip" onclick="setUser('1712345678')">María Pérez (1712345678)</span>
+          <span class="chip" onclick="setUser('1798765432')">Juan Gómez (1798765432)</span>
+          <span class="chip" onclick="setUser('0000000001')">Admin (0000000001)</span>
+        </div>
+        <div style="margin-top:14px"><button onclick="login()">Entrar</button></div>
+        <div class="msg" id="loginMsg"></div>
+      </div>
+      <div class="login-mascot"><img src="/mascota.png" alt="Mascota"></div>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dash" style="display:none">
+    <div class="grid" id="stats"></div>
+
+    <!-- Marcar asistencia -->
+    <div class="card">
+      <h2>Marcar asistencia <span style="font-size:12px;color:var(--muted);font-weight:400">(reconocimiento simulado en modo local)</span></h2>
+      <div class="warn" id="secureWarn" style="display:none">
+        Tu navegador está en un origen NO seguro (<code>http://IP</code>). La cámara y el GPS solo funcionan en
+        <code>localhost</code> o <code>https</code>. Para probar en el teléfono se requiere HTTPS.
+      </div>
+      <div class="cam">
+        <div style="flex:1;min-width:280px">
+          <video id="video" autoplay playsinline muted></video>
+          <div style="margin-top:8px">
+            <button id="btnCam" onclick="startCamera()">Iniciar cámara</button>
+            <button onclick="capturePhoto()">Capturar foto</button>
+            <button class="ghost" onclick="stopCamera()">Detener</button>
+          </div>
+          <div class="msg" id="camMsg"></div>
+        </div>
+        <div class="gpsbox">
+          <div style="font-weight:700;margin-bottom:6px"><span class="live" id="gpsDot"></span>Ubicación en tiempo real</div>
+          <div>Latitud: <b id="gpsLat">—</b></div>
+          <div>Longitud: <b id="gpsLng">—</b></div>
+          <div>Precisión: <b id="gpsAcc">—</b></div>
+          <div style="margin-top:8px;color:var(--muted)">Foto capturada:</div>
+          <img class="thumb" id="thumb" alt="sin foto">
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button class="green" onclick="mark('CHECK_IN')">Registrar ENTRADA</button>
+        <button class="amber" onclick="mark('CHECK_OUT')">Registrar SALIDA</button>
+      </div>
+      <div class="msg" id="markMsg"></div>
+    </div>
+
+    <!-- Reporte -->
+    <div class="card">
+      <h2>Reporte mensual</h2>
+      <div class="row">
+        <div><label>Empleado</label>
+          <select id="emp">
+            <option value="92ae49a3-ad6d-4a43-8bef-01373d79c154">María Pérez (1712345678)</option>
+            <option value="c53935dc-b91f-4e47-8f44-fd876618e74d">Juan Gómez (1798765432)</option>
+          </select>
+        </div>
+        <div><label>Año</label><input id="year" value="2026"></div>
+        <div><label>Mes</label><input id="month" value="10" min="1" max="12"></div>
+        <div><button onclick="loadReport()">Ver reporte</button></div>
+      </div>
+      <div class="hint">Jornada: entrada <b>08:00</b> · salida <b>17:00</b> · almuerzo 1 h.<br>
+      Horas extra = (minutos antes de 08:00) + (minutos después de 17:00).</div>
+      <div class="msg" id="repMsg"></div>
+      <div id="repTable" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let token = localStorage.getItem('asistencia_token') || '';
+let user = null;
+let photoBlob = null;
+let videoStream = null;
+let gps = null;
+let deviceId = localStorage.getItem('asistencia_device') || (function(){const d='dev-'+Math.random().toString(36).slice(2,10);localStorage.setItem('asistencia_device',d);return d;})();
+
+function msg(id, text, cls){ const m=document.getElementById(id); m.className='msg '+(cls||''); m.textContent=text; }
+
+async function health(){
+  try{ const r=await fetch('/api/v1/health'); const j=await r.json();
+    document.getElementById('dot').className='dot'+(j.status==='ok'?'':' off');
+    document.getElementById('healthText').textContent=j.status==='ok'?'API en línea · DB '+j.database:'sin conexión';
+  }catch(e){ document.getElementById('dot').className='dot off'; document.getElementById('healthText').textContent='sin conexión'; }
+}
+
+function setUser(c){ document.getElementById('cedula').value=c; document.getElementById('pin').value='1234'; }
+
+async function login(){
+  const cedula=document.getElementById('cedula').value.trim(); const secret=document.getElementById('pin').value;
+  msg('loginMsg','Autenticando…');
+  try{
+    const r=await fetch('/api/v1/auth/login-cedula',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cedula,secret})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error de login');
+    token=j.accessToken; user=j.user; localStorage.setItem('asistencia_token',token);
+    msg('loginMsg','Bienvenido/a '+(user.name||cedula)+' (rol '+user.role+')','ok');
+    document.getElementById('loginCard').style.display='none';
+    document.getElementById('dash').style.display='block';
+    renderStats(null); loadReport(); startLocation();
+  }catch(e){ msg('loginMsg',e.message,'err'); }
+}
+
+function renderStats(rep){
+  const s=document.getElementById('stats');
+  if(!rep){
+    s.innerHTML=`<div class="stat"><div class="k">Usuario</div><div class="v" style="font-size:16px">${user?.name||''}</div></div>
+      <div class="stat"><div class="k">Rol</div><div class="v" style="font-size:16px">${user?.role}</div></div>
+      <div class="stat"><div class="k">Entrada</div><div class="v">08:00</div></div>
+      <div class="stat"><div class="k">Salida</div><div class="v">17:00</div></div>`;
+    return;
+  }
+  s.innerHTML=`
+    <div class="stat"><div class="k">Días trabajados</div><div class="v">${rep.daysWorked}</div></div>
+    <div class="stat"><div class="k">Faltas</div><div class="v">${rep.absences}</div></div>
+    <div class="stat"><div class="k">Horas ordinarias</div><div class="v">${(rep.totalOrdinaryMinutes/60).toFixed(1)}<small>h</small></div></div>
+    <div class="stat"><div class="k">Horas extra</div><div class="v">${(rep.totalOvertimeMinutes/60).toFixed(2)}<small>h</small></div></div>
+    <div class="stat"><div class="k">Atrasos</div><div class="v">${rep.lateArrivalsCount}</div></div>`;
+}
+
+async function loadReport(){
+  msg('repMsg','Cargando reporte…');
+  const emp=document.getElementById('emp').value, year=document.getElementById('year').value, month=document.getElementById('month').value;
+  try{
+    const r=await fetch(`/api/v1/reports/monthly/${emp}?year=${year}&month=${month}`,{headers:{'Authorization':'Bearer '+token}});
+    const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error');
+    renderStats(j); msg('repMsg','','ok');
+    const rows=j.detail.map(d=>{
+      let tag=d.status==='COMPLETE'?'<span class="tag ok">COMPLETO</span>':'<span class="tag missing">'+d.status+'</span>';
+      if(d.overtimeMinutes>0) tag='<span class="tag ok">COMPLETO</span> <span class="tag late">+'+d.overtimeMinutes+'m extra</span>';
+      return `<tr><td>${d.date}</td><td>${d.entryTime||'—'}</td><td>${d.exitTime||'—'}</td><td>${(d.ordinaryMinutes/60).toFixed(2)}h</td><td><b>${(d.overtimeMinutes/60).toFixed(2)}h</b></td><td>${tag}</td></tr>`;
+    }).join('');
+    document.getElementById('repTable').innerHTML=`<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Ordinarias</th><th>Extra</th><th>Estado</th></tr></thead><tbody>${rows||'<tr><td colspan=6>Sin registros</td></tr>'}</tbody></table>`;
+  }catch(e){ msg('repMsg',e.message,'err'); }
+}
+
+// Cámara
+async function startCamera(){
+  if(!window.isSecureContext){ document.getElementById('secureWarn').style.display='block'; msg('camMsg','Contexto no seguro: la cámara no está disponible. Usa localhost o HTTPS.','err'); return; }
+  try{
+    videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+    const v=document.getElementById('video'); v.srcObject=videoStream;
+    document.getElementById('btnCam').disabled=true;
+    msg('camMsg','Cámara activa. Haz clic en "Capturar foto".','ok');
+  }catch(e){ msg('camMsg','No se pudo acceder a la cámara: '+e.message,'err'); }
+}
+
+function stopCamera(){
+  if(videoStream){ videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; }
+  document.getElementById('video').srcObject=null;
+  document.getElementById('btnCam').disabled=false;
+}
+
+function capturePhoto(){
+  const v=document.getElementById('video');
+  if(!videoStream){ msg('camMsg','Primero inicia la cámara.','err'); return; }
+  const c=document.createElement('canvas'); c.width=v.videoWidth||640; c.height=v.videoHeight||480;
+  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  c.toBlob(b=>{ photoBlob=b; document.getElementById('thumb').src=URL.createObjectURL(b); msg('camMsg','Foto capturada.','ok'); },'image/jpeg',0.85);
+}
+
+// GPS en tiempo real
+function startLocation(){
+  if(!('geolocation' in navigator)){ msg('markMsg','Este navegador no soporta geolocalización.','err'); return; }
+  if(!window.isSecureContext){ document.getElementById('secureWarn').style.display='block'; }
+  navigator.geolocation.watchPosition(
+    pos=>{
+      gps={ latitude:+pos.coords.latitude.toFixed(6), longitude:+pos.coords.longitude.toFixed(6), accuracyM:+pos.coords.accuracy.toFixed(1), provider:'html5-geolocation', isMock:false };
+      document.getElementById('gpsLat').textContent=gps.latitude;
+      document.getElementById('gpsLng').textContent=gps.longitude;
+      document.getElementById('gpsAcc').textContent=gps.accuracyM+' m';
+    },
+    err=>{ document.getElementById('gpsDot').style.background='var(--accent)'; msg('markMsg','GPS no disponible: '+err.message,'err'); },
+    { enableHighAccuracy:true, maximumAge:0, timeout:10000 }
+  );
+}
+
+// Marcar asistencia
+async function mark(type){
+  if(!photoBlob){ msg('markMsg','Primero captura una foto con la cámara.','err'); return; }
+  if(!gps){ msg('markMsg','Esperando ubicación GPS…','err'); return; }
+  msg('markMsg','Enviando… ('+type+')');
+  const fd=new FormData();
+  fd.append('photo',photoBlob,'captura.jpg');
+  fd.append('gps',JSON.stringify(gps));
+  fd.append('deviceId',deviceId);
+  fd.append('nonce',''); fd.append('hmacSignature',''); fd.append('livenessToken','');
+  fd.append('clientTimestamp',new Date().toISOString());
+  try{
+    const r=await fetch('/api/v1/attendance/'+(type==='CHECK_IN'?'check-in':'check-out'),{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.message||'Error');
+    const c=j.computed||{};
+    msg('markMsg',`${type==='CHECK_IN'?'ENTRADA':'SALIDA'} registrada · hora servidor ${new Date(j.serverTimestamp).toLocaleTimeString()} · match ${(j.faceMatchScore*100).toFixed(1)}% · extra del día: ${c.overtimeMinutes||0} min`,'ok');
+    loadReport();
+  }catch(e){ msg('markMsg','Error: '+e.message,'err'); }
+}
+
+health();
+if(token){ document.getElementById('loginCard').style.display='none'; document.getElementById('dash').style.display='block'; renderStats(null); loadReport(); startLocation(); }
+</script>
+</body>
+</html>

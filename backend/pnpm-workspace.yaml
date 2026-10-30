@@ -1,0 +1,10 @@
+packages:
+  - "."
+
+# Permitir que estos paquetes ejecuten sus scripts de instalación
+# (Prisma necesita descargar sus motores y generar el cliente).
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - "@nestjs/core"

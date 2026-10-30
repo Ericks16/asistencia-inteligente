@@ -1,0 +1,101 @@
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createHash, randomUUID } from 'crypto';
+import { mkdir, unlink, writeFile } from 'fs/promises';
+import { join, resolve } from 'path';
+import { encryptAes256Gcm } from '../attendance/crypto.util';
+
+export interface StoredPhoto {
+  key: string;
+  hash: string;
+}
+
+@Injectable()
+export class StorageService {
+  private readonly logger = new Logger(StorageService.name);
+  private readonly provider: 'local' | 's3';
+  private readonly bucket: string;
+  private readonly localDir: string;
+  private readonly s3?: S3Client;
+  private readonly encryptionKey: Buffer;
+
+  constructor(private readonly config: ConfigService) {
+    const provider = config.get('PHOTO_STORAGE_PROVIDER') ?? 'local';
+    if (provider !== 'local' && provider !== 's3') {
+      throw new Error('PHOTO_STORAGE_PROVIDER debe ser local o s3');
+    }
+    this.provider = provider;
+    this.bucket = config.get('AWS_S3_BUCKET') ?? '';
+    this.localDir = resolve(config.get('PHOTO_LOCAL_DIR') ?? './data/photos');
+    this.encryptionKey = this.readEncryptionKey();
+
+    if (this.provider === 's3') {
+      if (!this.bucket) throw new Error('AWS_S3_BUCKET es obligatorio con PHOTO_STORAGE_PROVIDER=s3');
+      this.s3 = new S3Client({
+        region: config.get('AWS_REGION') ?? 'us-east-1',
+        endpoint: config.get('S3_ENDPOINT') || undefined,
+        forcePathStyle: config.get('S3_FORCE_PATH_STYLE') === 'true',
+      });
+    }
+  }
+
+  async putPhoto(photo: Buffer, userId: string): Promise<StoredPhoto> {
+    if (!photo?.length) throw new BadRequestException('La foto está vacía');
+    const hash = createHash('sha256').update(photo).digest('hex');
+    const key = `fotos/${userId}/${Date.now()}-${randomUUID()}.enc`;
+    const encrypted = encryptAes256Gcm(photo, this.encryptionKey);
+    const encryptedBytes = Buffer.from(JSON.stringify(encrypted), 'utf8');
+
+    if (this.provider === 's3') {
+      await this.s3!.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: encryptedBytes,
+        ContentType: 'application/octet-stream',
+        ServerSideEncryption: this.config.get('AWS_S3_SSE') || undefined,
+      }));
+    } else {
+      const target = join(this.localDir, key);
+      await mkdir(join(this.localDir, `fotos/${userId}`), { recursive: true });
+      await writeFile(target, encryptedBytes);
+    }
+
+    return { key, hash };
+  }
+
+  async deletePhoto(key: string): Promise<void> {
+    if (this.provider === 's3') {
+      await this.s3!.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+      return;
+    }
+    try {
+      await unlink(join(this.localDir, key));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+
+  async signedUrl(key: string): Promise<string> {
+    if (this.provider === 's3') {
+      return getSignedUrl(this.s3!, new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }), { expiresIn: 300 });
+    }
+    return `/local-photo/${encodeURIComponent(key)}`;
+  }
+
+  private readEncryptionKey(): Buffer {
+    const raw = this.config.get('PHOTO_ENCRYPTION_KEY');
+    if (!raw) {
+      if (this.provider === 's3') throw new Error('PHOTO_ENCRYPTION_KEY es obligatorio');
+      this.logger.warn('PHOTO_ENCRYPTION_KEY no configurada; usando clave de desarrollo no persistente');
+      return createHash('sha256').update('asistencia-dev-only').digest();
+    }
+    const key = Buffer.from(raw, 'base64');
+    if (key.length !== 32) throw new Error('PHOTO_ENCRYPTION_KEY debe ser Base64 de 32 bytes');
+    return key;
+  }
+}

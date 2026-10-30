@@ -1,0 +1,476 @@
+openapi: 3.1.0
+info:
+  title: Control de Asistencia Inteligente — API
+  version: 1.0.0
+  description: |
+    API REST del sistema de asistencia inteligente (móvil + web).
+    Autenticación por cédula + PIN/contraseña con JWT. RBAC: EMPLOYEE / ADMIN.
+servers:
+  - url: https://api.empresa.com/api/v1
+    description: Producción
+  - url: http://localhost:3000/api/v1
+    description: Local
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Attendance
+  - name: Reports
+  - name: Admin
+
+paths:
+  /auth/login-cedula:
+    post:
+      tags: [Auth]
+      summary: Inicio de sesión por cédula
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cedula, secret]
+              properties:
+                cedula:
+                  type: string
+                  description: Documento Nacional de Identidad.
+                  example: "1712345678"
+                secret:
+                  type: string
+                  description: PIN inicial o contraseña.
+                  example: "1234"
+                deviceId:
+                  type: string
+                  description: UUID anónimo del dispositivo (attestation).
+      responses:
+        "200":
+          description: Autenticación exitosa.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  nonce:
+                    type: string
+                    description: Nonce de un solo uso para firmar la foto (anti-replay).
+                  user:
+                    $ref: "#/components/schemas/UserSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "423":
+          description: Usuario suspendido o PIN bloqueado.
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renueva access token (refresh rotativo)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: Nuevo par de tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /attendance/check-in:
+    post:
+      tags: [Attendance]
+      summary: Registro de entrada individual (foto + GPS + liveness)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, gps, nonce, hmacSignature, livenessToken]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: Foto capturada directamente del buffer de cámara.
+                gps:
+                  type: object
+                  properties:
+                    latitude: { type: number }
+                    longitude: { type: number }
+                    accuracyM: { type: number }
+                    provider: { type: string, enum: [gps, fused, network] }
+                    isMock: { type: boolean }
+                nonce:
+                  type: string
+                hmacSignature:
+                  type: string
+                  description: HMAC-SHA256(foto + nonce + deviceId).
+                livenessToken:
+                  type: string
+                  description: Token de sesión de liveness (AWS Rekognition).
+                clientTimestamp:
+                  type: string
+                  format: date-time
+                deviceId:
+                  type: string
+      responses:
+        "201":
+          description: Asistencia registrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          description: Liveness fallido o match < 95% (REJECTED).
+
+  /attendance/check-out:
+    post:
+      tags: [Attendance]
+      summary: Registro de salida individual
+      requestBody:
+        $ref: "#/paths/~1attendance~1check-in/post/requestBody"
+      responses:
+        "201":
+          description: Salida registrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceResult"
+
+  /attendance/check-in-group:
+    post:
+      tags: [Attendance]
+      summary: Asistencia grupal (múltiples rostros en una foto)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, gps, nonce, hmacSignature]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: Foto grupal con varios rostros.
+                gps: { $ref: "#/components/schemas/GpsPayload" }
+                nonce: { type: string }
+                hmacSignature: { type: string }
+                clientTimestamp: { type: string, format: date-time }
+      responses:
+        "202":
+          description: Aceptado; procesamiento facial en cola.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupResult"
+        "422":
+          description: Sin rostros detectados.
+
+  /attendance/history/{employeeId}:
+    get:
+      tags: [Attendance]
+      summary: Historial de asistencias del empleado
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Lista de marcas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AttendanceLog" }
+
+  /reports/monthly/{employeeId}:
+    get:
+      tags: [Reports]
+      summary: Reporte mensual consolidado
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, example: 2026 }
+        - name: month
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 12, example: 10 }
+      responses:
+        "200":
+          description: Reporte mensual.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyReport"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/attendance/{id}:
+    patch:
+      tags: [Admin]
+      summary: Corrección de asistencia (solo ADMIN)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                type:
+                  type: string
+                  enum: [CHECK_IN, CHECK_OUT]
+                serverTimestamp:
+                  type: string
+                  format: date-time
+                status:
+                  type: string
+                  enum: [VALID, MANUAL, REJECTED]
+                reason:
+                  type: string
+                  description: Motivo de la corrección (obligatorio para auditoría).
+      responses:
+        "200":
+          description: Corrección aplicada y registrada en auditoría.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceLog"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /retention/purge:
+    post:
+      tags: [Admin]
+      summary: Elimina registros y fotos con más de 45 días
+      description: Ruta para Vercel Cron. Requiere Authorization Bearer CRON_SECRET.
+      security: []
+      responses:
+        "200":
+          description: Retención ejecutada.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/reports/monthly:
+    get:
+      tags: [Admin]
+      summary: Reportes mensuales de todos los empleados (ADMIN)
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: month
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Lista de reportes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MonthlyReport" }
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Consulta de auditoría (ADMIN)
+      parameters:
+        - name: entity
+          in: query
+          schema: { type: string }
+        - name: actorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Lista de eventos de auditoría.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditLog" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    EmployeeId:
+      name: employeeId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: No autenticado o token inválido.
+    Forbidden:
+      description: Sin permisos para esta acción.
+    NotFound:
+      description: Recurso no encontrado.
+    BadRequest:
+      description: Petición inválida.
+
+  schemas:
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        cedula: { type: string }
+        role: { type: string, enum: [EMPLOYEE, ADMIN] }
+        firstName: { type: string }
+        lastName: { type: string }
+        mustChangePin: { type: boolean }
+
+    GpsPayload:
+      type: object
+      properties:
+        latitude: { type: number }
+        longitude: { type: number }
+        accuracyM: { type: number }
+        provider: { type: string }
+        isMock: { type: boolean }
+
+    AttendanceResult:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, VALID, REJECTED] }
+        serverTimestamp: { type: string, format: date-time }
+        faceMatchScore: { type: number, nullable: true }
+        livenessScore: { type: number, nullable: true }
+        photoHash: { type: string }
+        computed:
+          $ref: "#/components/schemas/DailyComputation"
+
+    GroupResult:
+      type: object
+      properties:
+        sessionId: { type: string, format: uuid }
+        status: { type: string, enum: [PROCESSING, COMPLETED, PARTIAL, FAILED] }
+        totalFacesDetected: { type: integer }
+        identified:
+          type: array
+          items:
+            type: object
+            properties:
+              employeeId: { type: string, format: uuid }
+              name: { type: string }
+              matchScore: { type: number }
+              boundingBox: { type: object }
+        unidentifiedCount: { type: integer }
+
+    DailyComputation:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        entryTime: { type: string, nullable: true }
+        exitTime: { type: string, nullable: true }
+        earlyEntryMinutes: { type: integer }
+        lateExitMinutes: { type: integer }
+        lateArrivalMinutes: { type: integer }
+        earlyDepartureMinutes: { type: integer }
+        overtimeMinutes: { type: integer }
+        ordinaryMinutes: { type: integer }
+        totalWorkedMinutes: { type: integer }
+        status: { type: string }
+
+    AttendanceLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [CHECK_IN, CHECK_OUT] }
+        status: { type: string }
+        serverTimestamp: { type: string, format: date-time }
+        photoHash: { type: string, nullable: true }
+        gpsLat: { type: number, nullable: true }
+        gpsLng: { type: number, nullable: true }
+        faceMatchScore: { type: number, nullable: true }
+        source: { type: string, enum: [INDIVIDUAL, GROUP, MANUAL] }
+
+    MonthlyReport:
+      type: object
+      properties:
+        employeeId: { type: string, format: uuid }
+        year: { type: integer }
+        month: { type: integer }
+        daysWorked: { type: integer }
+        absences: { type: integer }
+        lateArrivalsCount: { type: integer }
+        totalOrdinaryMinutes: { type: integer }
+        totalOvertimeMinutes: { type: integer }
+        detail:
+          type: array
+          items: { $ref: "#/components/schemas/ReportDay" }
+
+    ReportDay:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        entryTime: { type: string, nullable: true }
+        exitTime: { type: string, nullable: true }
+        overtimeMinutes: { type: integer }
+        ordinaryMinutes: { type: integer }
+        status: { type: string }
+        photoUrl: { type: string, format: uri, nullable: true, description: URL firmada (presigned, corta duración) }
+        gps: { type: object, properties: { latitude: { type: number }, longitude: { type: number } } }
+
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        entity: { type: string }
+        entityId: { type: string, nullable: true }
+        actorId: { type: string, format: uuid, nullable: true }
+        oldValue: { type: object, nullable: true }
+        newValue: { type: object, nullable: true }
+        createdAt: { type: string, format: date-time }
