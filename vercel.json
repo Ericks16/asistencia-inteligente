@@ -1,4 +1,12 @@
 {
+  "version": 2,
+  "installCommand": "cd backend && pnpm install --frozen-lockfile && pnpm prisma:generate",
+  "buildCommand": "cd backend && pnpm build",
+  "functions": {
+    "backend/api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/v1/retention/purge",

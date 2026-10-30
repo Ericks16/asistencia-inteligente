@@ -5,7 +5,7 @@
       "maxDuration": 60
     }
   },
-  "installCommand": "pnpm install --frozen-lockfile && pnpm prisma:generate",
+  "installCommand": "pnpm install --frozen-lockfile && pnpm prisma:generate --schema=./prisma/schema.prisma",
   "buildCommand": "pnpm build",
   "crons": [
     {
