@@ -48,7 +48,7 @@ export class RekognitionFaceService implements IFaceRecognition {
   constructor(cfg: ConfigService) {
     this.client = new RekognitionClient({
       region: cfg.get('AWS_REGION') ?? 'us-east-1',
-    }) as AwsCommandClient;
+    }) as unknown as AwsCommandClient;
     this.threshold = Number(cfg.get('FACE_MATCH_THRESHOLD') ?? 0.95);
   }
 

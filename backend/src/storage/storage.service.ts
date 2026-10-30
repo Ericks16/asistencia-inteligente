@@ -44,7 +44,7 @@ export class StorageService {
         forcePathStyle: config.get('S3_FORCE_PATH_STYLE') === 'true',
       });
       this.s3 = client;
-      this.s3Commands = client as AwsCommandClient;
+      this.s3Commands = client as unknown as AwsCommandClient;
     }
   }
 
