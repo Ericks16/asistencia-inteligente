@@ -153,6 +153,7 @@
 
 <script>
 let token = localStorage.getItem('asistencia_token') || '';
+let refreshToken = localStorage.getItem('asistencia_refresh_token') || '';
 let user = JSON.parse(localStorage.getItem('asistencia_user') || 'null');
 let photoBlob = null;
 let videoStream = null;
@@ -160,9 +161,41 @@ let gps = null;
 let deviceId = localStorage.getItem('asistencia_device') || (function(){const d='dev-'+Math.random().toString(36).slice(2,10);localStorage.setItem('asistencia_device',d);return d;})();
 
 function msg(id, text, cls){ const m=document.getElementById(id); m.className='msg '+(cls||''); m.textContent=text; }
+async function readJson(response){
+  const text=await response.text();
+  try{return text?JSON.parse(text):{};}catch(_){throw new Error(`El servidor respondió ${response.status} sin un JSON válido.`);}
+}
+async function authenticatedFetch(url, options={}, retry=true){
+  const headers=new Headers(options.headers||{});
+  if(token) headers.set('Authorization','Bearer '+token);
+  const response=await fetch(url,{...options,headers});
+  if(response.status!==401 || !retry || !refreshToken) return response;
+  const refreshResponse=await fetch('/api/v1/auth/refresh',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({refreshToken})
+  });
+  if(!refreshResponse.ok){
+    localStorage.removeItem('asistencia_token');
+    localStorage.removeItem('asistencia_refresh_token');
+    localStorage.removeItem('asistencia_user');
+    token=''; refreshToken='';
+    user=null;
+    document.getElementById('loginCard').style.display='block';
+    document.getElementById('dash').style.display='none';
+    throw new Error('La sesión expiró. Inicia sesión nuevamente.');
+  }
+  const refreshed=await readJson(refreshResponse);
+  token=refreshed.accessToken;
+  refreshToken=refreshed.refreshToken;
+  user=refreshed.user||user;
+  localStorage.setItem('asistencia_token',token);
+  localStorage.setItem('asistencia_refresh_token',refreshToken);
+  return authenticatedFetch(url,options,false);
+}
 
 async function health(){
-  try{ const r=await fetch('/api/v1/health'); const j=await r.json();
+  try{ const r=await fetch('/api/v1/health'); const j=await readJson(r);
     document.getElementById('dot').className='dot'+(j.status==='ok'?'':' off');
     document.getElementById('healthText').textContent=j.status==='ok'?'API en línea · DB '+j.database:'sin conexión';
   }catch(e){ document.getElementById('dot').className='dot off'; document.getElementById('healthText').textContent='sin conexión'; }
@@ -175,8 +208,11 @@ async function login(){
   msg('loginMsg','Autenticando…');
   try{
     const r=await fetch('/api/v1/auth/login-cedula',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cedula,secret})});
-    const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error de login');
-    token=j.accessToken; user=j.user; localStorage.setItem('asistencia_token',token); localStorage.setItem('asistencia_user',JSON.stringify(user));
+    const j=await readJson(r); if(!r.ok) throw new Error(j.message||'Error de login');
+    token=j.accessToken; refreshToken=j.refreshToken; user=j.user;
+    localStorage.setItem('asistencia_token',token);
+    localStorage.setItem('asistencia_refresh_token',refreshToken);
+    localStorage.setItem('asistencia_user',JSON.stringify(user));
     const employeeSelect=document.getElementById('emp');
     if(user.role==='EMPLOYEE'){
       employeeSelect.value=user.id;
@@ -213,8 +249,8 @@ async function loadReport(){
   const emp=user?.role==='EMPLOYEE' ? user.id : document.getElementById('emp').value;
   const year=document.getElementById('year').value, month=document.getElementById('month').value;
   try{
-    const r=await fetch(`/api/v1/reports/monthly/${emp}?year=${year}&month=${month}`,{headers:{'Authorization':'Bearer '+token}});
-    const j=await r.json(); if(!r.ok) throw new Error(j.message||'Error');
+    const r=await authenticatedFetch(`/api/v1/reports/monthly/${emp}?year=${year}&month=${month}`);
+    const j=await readJson(r); if(!r.ok) throw new Error(j.message||'Error');
     renderStats(j); msg('repMsg','','ok');
     const rows=j.detail.map(d=>{
       let tag=d.status==='COMPLETE'?'<span class="tag ok">COMPLETO</span>':'<span class="tag missing">'+d.status+'</span>';
@@ -278,11 +314,12 @@ async function mark(type){
   fd.append('nonce',''); fd.append('hmacSignature',''); fd.append('livenessToken','');
   fd.append('clientTimestamp',new Date().toISOString());
   try{
-    const r=await fetch('/api/v1/attendance/'+(type==='CHECK_IN'?'check-in':'check-out'),{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
-    const j=await r.json();
+    const r=await authenticatedFetch('/api/v1/attendance/'+(type==='CHECK_IN'?'check-in':'check-out'),{method:'POST',body:fd});
+    const j=await readJson(r);
     if(!r.ok) throw new Error(j.message||'Error');
     const c=j.computed||{};
-    msg('markMsg',`${type==='CHECK_IN'?'ENTRADA':'SALIDA'} registrada · hora servidor ${new Date(j.serverTimestamp).toLocaleTimeString()} · match ${(j.faceMatchScore*100).toFixed(1)}% · extra del día: ${c.overtimeMinutes||0} min`,'ok');
+    const warning=j.warnings?.length?` · Aviso: ${j.warnings.join(' ')}`:'';
+    msg('markMsg',`${type==='CHECK_IN'?'ENTRADA':'SALIDA'} registrada · hora servidor ${new Date(j.serverTimestamp).toLocaleTimeString()} · match ${(j.faceMatchScore*100).toFixed(1)}% · extra del día: ${c.overtimeMinutes||0} min${warning}`,'ok');
     loadReport();
   }catch(e){ msg('markMsg','Error: '+e.message,'err'); }
 }

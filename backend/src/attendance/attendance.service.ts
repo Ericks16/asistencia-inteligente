@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -13,6 +13,7 @@ import { AttendanceStatus, AttendanceType } from '../common/types/domain.types';
 
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
   private readonly tz: string;
   private readonly matchThreshold: number;
   private readonly livenessThreshold: number;
@@ -94,7 +95,21 @@ export class AttendanceService {
       },
     });
 
-    await this.audit(user.sub, type === 'CHECK_IN' ? 'CHECK_IN' : 'CHECK_OUT', log.id, user.sub, { matchScore });
+    const warnings: string[] = [];
+    try {
+      await this.audit(user.sub, type === 'CHECK_IN' ? 'CHECK_IN' : 'CHECK_OUT', log.id, user.sub, { matchScore });
+    } catch (error) {
+      this.logger.error('No se pudo guardar la auditoría de asistencia', error instanceof Error ? error.stack : String(error));
+      warnings.push('La asistencia se guardó, pero la auditoría quedó pendiente.');
+    }
+
+    let computed: ReturnType<typeof computeDaily> | null = null;
+    try {
+      computed = await this.computeToday(user.sub);
+    } catch (error) {
+      this.logger.error('No se pudo calcular el resumen diario', error instanceof Error ? error.stack : String(error));
+      warnings.push('La asistencia se guardó, pero el resumen diario no está disponible.');
+    }
 
     return {
       id: log.id,
@@ -103,7 +118,8 @@ export class AttendanceService {
       faceMatchScore: matchScore,
       livenessScore: liveness.confidence,
       photoHash,
-      computed: await this.computeToday(user.sub),
+      computed,
+      warnings,
     };
   }
 

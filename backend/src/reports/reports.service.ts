@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeMonthly, localDateInZone, AttendanceStamp, DEFAULT_SHIFT } from '../attendance/time-calculator';
 import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class ReportsService {
+  private readonly logger = new Logger(ReportsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -53,30 +54,40 @@ export class ReportsService {
     }));
 
     // Persistir (upsert) el reporte mensual.
-    const report = await this.prisma.monthlyReport.upsert({
-      where: { employeeId_year_month: { employeeId, year, month } },
-      create: {
+    try {
+      return await this.prisma.monthlyReport.upsert({
+        where: { employeeId_year_month: { employeeId, year, month } },
+        create: {
+          employeeId,
+          year,
+          month,
+          daysWorked: computed.daysWorked,
+          absences: computed.absences,
+          lateArrivalsCount: computed.lateArrivalsCount,
+          totalOrdinaryMinutes: computed.totalOrdinaryMinutes,
+          totalOvertimeMinutes: computed.totalOvertimeMinutes,
+          detail,
+        },
+        update: {
+          daysWorked: computed.daysWorked,
+          absences: computed.absences,
+          lateArrivalsCount: computed.lateArrivalsCount,
+          totalOrdinaryMinutes: computed.totalOrdinaryMinutes,
+          totalOvertimeMinutes: computed.totalOvertimeMinutes,
+          detail,
+        },
+      });
+    } catch (error) {
+      this.logger.error('No se pudo persistir el reporte mensual', error instanceof Error ? error.stack : String(error));
+      return {
         employeeId,
         year,
         month,
-        daysWorked: computed.daysWorked,
-        absences: computed.absences,
-        lateArrivalsCount: computed.lateArrivalsCount,
-        totalOrdinaryMinutes: computed.totalOrdinaryMinutes,
-        totalOvertimeMinutes: computed.totalOvertimeMinutes,
+        ...computed,
         detail,
-      },
-      update: {
-        daysWorked: computed.daysWorked,
-        absences: computed.absences,
-        lateArrivalsCount: computed.lateArrivalsCount,
-        totalOrdinaryMinutes: computed.totalOrdinaryMinutes,
-        totalOvertimeMinutes: computed.totalOvertimeMinutes,
-        detail,
-      },
-    });
-
-    return report;
+        warnings: ['El reporte se calculó, pero no pudo guardarse en la base de datos.'],
+      };
+    }
   }
 
 }
