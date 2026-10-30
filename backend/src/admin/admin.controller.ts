@@ -10,13 +10,13 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { Role } from '../common/types/domain.types';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)

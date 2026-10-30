@@ -5,6 +5,7 @@
       "maxDuration": 60
     }
   },
+  "buildCommand": "pnpm prisma:generate && pnpm build",
   "crons": [
     {
       "path": "/api/v1/retention/purge",

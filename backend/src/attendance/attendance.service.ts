@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AttendanceStatus, AttendanceType, AttendanceSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CheckInDto } from './dto/check-in.dto';
@@ -10,6 +9,7 @@ import { assertGpsValid, validateGps } from './gps-validator';
 import { computeDaily, localDateInZone, pairStamps, AttendanceStamp, DEFAULT_SHIFT } from './time-calculator';
 import { hmacSha256 } from './crypto.util';
 import { StorageService } from '../storage/storage.service';
+import { AttendanceStatus, AttendanceType } from '../common/types/domain.types';
 
 @Injectable()
 export class AttendanceService {

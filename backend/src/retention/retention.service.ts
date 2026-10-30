@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 
+type ExpiredLog = { id: string; photoRef: string | null; groupSessionId: string | null };
+type ExpiredSession = { id: string; photoRef: string | null };
+
 @Injectable()
 export class RetentionService {
   private readonly days: number;
@@ -32,27 +35,27 @@ export class RetentionService {
       select: { id: true, photoRef: true },
     });
 
+    const expiredLogs = logs as ExpiredLog[];
+    const expiredSessions = sessions as ExpiredSession[];
     const keys = new Set(
-      [...logs, ...sessions]
-        .map((item) => item.photoRef)
+      [...expiredLogs, ...expiredSessions]
+        .map((item: ExpiredLog | ExpiredSession) => item.photoRef)
         .filter((key): key is string => Boolean(key)),
     );
     for (const key of keys) await this.storage.deletePhoto(key);
 
-    const logIds = logs.map((log) => log.id);
-    const sessionIds = sessions.map((session) => session.id);
-    await this.prisma.$transaction(async (tx) => {
-      if (logIds.length) {
-        await tx.overtimeRecord.deleteMany({ where: { sourceLogId: { in: logIds } } });
-        await tx.attendanceAdjustment.deleteMany({ where: { attendanceLogId: { in: logIds } } });
-        await tx.groupAttendanceMatch.deleteMany({ where: { attendanceLogId: { in: logIds } } });
-        await tx.attendanceLog.deleteMany({ where: { id: { in: logIds } } });
-      }
-      if (sessionIds.length) {
-        await tx.groupAttendanceMatch.deleteMany({ where: { sessionId: { in: sessionIds } } });
-        await tx.groupAttendanceSession.deleteMany({ where: { id: { in: sessionIds } } });
-      }
-    });
+    const logIds = expiredLogs.map((log: ExpiredLog) => log.id);
+    const sessionIds = expiredSessions.map((session: ExpiredSession) => session.id);
+    if (logIds.length) {
+      await this.prisma.overtimeRecord.deleteMany({ where: { sourceLogId: { in: logIds } } });
+      await this.prisma.attendanceAdjustment.deleteMany({ where: { attendanceLogId: { in: logIds } } });
+      await this.prisma.groupAttendanceMatch.deleteMany({ where: { attendanceLogId: { in: logIds } } });
+      await this.prisma.attendanceLog.deleteMany({ where: { id: { in: logIds } } });
+    }
+    if (sessionIds.length) {
+      await this.prisma.groupAttendanceMatch.deleteMany({ where: { sessionId: { in: sessionIds } } });
+      await this.prisma.groupAttendanceSession.deleteMany({ where: { id: { in: sessionIds } } });
+    }
 
     return { cutoff, deletedLogs: logIds.length, deletedSessions: sessionIds.length, deletedPhotos: keys.size };
   }
