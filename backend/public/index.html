@@ -334,7 +334,7 @@ async function login(){
     document.getElementById('loginCard').style.display='none';
     document.getElementById('dash').style.display='block';
     showWelcome();
-    renderStats(null); loadEmployees(); loadReport(); startLocation();
+    renderStats(null); await loadEmployees(); await loadReport(); startLocation();
   }catch(e){ msg('loginMsg',e.message,'err'); }
 }
 
