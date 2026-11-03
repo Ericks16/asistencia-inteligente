@@ -95,6 +95,7 @@
   <!-- Dashboard -->
   <div id="dash" style="display:none">
     <div style="text-align:right;margin-bottom:10px"><button class="ghost" onclick="logout()">Cerrar sesión</button></div>
+    <h2 id="welcome" style="margin:0 0 16px"></h2>
     <div class="grid" id="stats"></div>
 
     <!-- Marcar asistencia -->
@@ -174,6 +175,9 @@ function logout(){
   clearSession();
   msg('loginMsg','Sesión cerrada. Inicia sesión con tu cédula.','ok');
 }
+function showWelcome(){
+  document.getElementById('welcome').textContent='Bienvenido/a '+(user?.name||user?.cedula||'');
+}
 async function readJson(response){
   const text=await response.text();
   try{return text?JSON.parse(text):{};}catch(_){throw new Error(`El servidor respondió ${response.status} sin un JSON válido.`);}
@@ -234,6 +238,7 @@ async function login(){
     msg('loginMsg','Bienvenido/a '+(user.name||cedula)+' (rol '+user.role+')','ok');
     document.getElementById('loginCard').style.display='none';
     document.getElementById('dash').style.display='block';
+    showWelcome();
     renderStats(null); loadReport(); startLocation();
   }catch(e){ msg('loginMsg',e.message,'err'); }
 }
@@ -343,6 +348,7 @@ async function restoreSession(){
   }
   document.getElementById('loginCard').style.display='none';
   document.getElementById('dash').style.display='block';
+  showWelcome();
   const employeeSelect=document.getElementById('emp');
   if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }
   renderStats(null);

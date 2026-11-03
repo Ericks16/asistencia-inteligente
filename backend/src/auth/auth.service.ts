@@ -14,7 +14,10 @@ export class AuthService {
   ) {}
 
   async loginByCedula(dto: LoginCedulaDto) {
-    const user = await this.prisma.user.findUnique({ where: { cedula: dto.cedula } });
+    const user = await this.prisma.user.findUnique({
+      where: { cedula: dto.cedula },
+      include: { profile: true },
+    });
     if (!user) throw new UnauthorizedException('Cédula o PIN incorrectos');
 
     if (user.status !== 'ACTIVE') {
@@ -38,7 +41,7 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await this.audit('LOGIN', 'user', user.id, user.id, null);
 
-    return this.issueTokens(user.id, user.cedula, user.role, dto.deviceId);
+    return this.issueTokens(user.id, user.cedula, user.role, dto.deviceId, undefined, user.profile);
   }
 
   async refresh(refreshToken: string) {
@@ -57,12 +60,15 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token inválido o reutilizado');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: stored.userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: stored.userId },
+      include: { profile: true },
+    });
     if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException();
 
     // Rotación: revocar el actual y emitir uno nuevo.
     await this.prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-    return this.issueTokens(user.id, user.cedula, user.role, undefined, stored.id);
+    return this.issueTokens(user.id, user.cedula, user.role, undefined, stored.id, user.profile);
   }
 
   async logout(refreshToken: string) {
@@ -73,7 +79,14 @@ export class AuthService {
     });
   }
 
-  private async issueTokens(userId: string, cedula: string, role: JwtPayload['role'], deviceId?: string, replacedBy?: string) {
+  private async issueTokens(
+    userId: string,
+    cedula: string,
+    role: JwtPayload['role'],
+    deviceId?: string,
+    replacedBy?: string,
+    profile?: { firstName: string; lastName: string } | null,
+  ) {
     const payload: JwtPayload = { sub: userId, cedula, role, deviceId };
     const accessToken = await this.jwt.signAsync(payload);
     const refreshToken = randomBytes(48).toString('base64url');
@@ -92,7 +105,12 @@ export class AuthService {
       accessToken,
       refreshToken,
       nonce: randomBytes(16).toString('hex'), // nonce anti-replay para firmar la foto
-      user: { id: userId, cedula, role },
+      user: {
+        id: userId,
+        cedula,
+        role,
+        name: profile ? `${profile.firstName} ${profile.lastName}`.trim() : cedula,
+      },
     };
   }
 
