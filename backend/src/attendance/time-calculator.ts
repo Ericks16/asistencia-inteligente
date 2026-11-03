@@ -244,11 +244,19 @@ export function computeDaily(
     notes.push('Marca registrada durante el almuerzo; se descontó el solape.');
   }
 
-  // 6) Ordinarias efectivas = ordinarias esperadas menos atraso y salida temprana.
-  const ordinaryMinutes = Math.max(
-    0,
-    config.ordinaryMinutes - lateArrivalMinutes - earlyDepartureMinutes,
-  );
+  // 6) Ordinarias efectivas: solo el tiempo trabajado dentro de la jornada
+  // ordinaria, descontando el solape con el almuerzo. Esto también contabiliza
+  // jornadas parciales (por ejemplo, 16:49–16:51 = 2 minutos).
+  const ordinaryStart = Math.max(e, entryMin);
+  const ordinaryEnd = Math.min(x, exitMin);
+  let ordinaryMinutes = Math.max(0, ordinaryEnd - ordinaryStart);
+  if (ordinaryMinutes > 0) {
+    const lunchOverlap = Math.max(
+      0,
+      Math.min(ordinaryEnd, lunchEnd) - Math.max(ordinaryStart, lunchStart),
+    );
+    ordinaryMinutes = Math.max(0, ordinaryMinutes - lunchOverlap);
+  }
 
   const overtimeMinutes = earlyEntryMinutes + lateExitMinutes;
   const totalWorkedMinutes = Math.max(0, grossMinutes);
