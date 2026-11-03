@@ -152,6 +152,7 @@ export class AttendanceService {
       serverTimestamp: log.serverTimestamp,
       faceMatchScore: matchScore,
       livenessScore: liveness.confidence,
+      verification: this.isLocal ? 'LOCAL_FACE_API' : this.isMock ? 'MOCK' : 'AWS_REKOGNITION',
       photoHash,
       computed,
       warnings,
