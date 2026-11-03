@@ -254,7 +254,7 @@ async function health(){
   }catch(e){ document.getElementById('dot').className='dot off'; document.getElementById('healthText').textContent='sin conexión'; }
 }
 
-function setUser(c){ document.getElementById('cedula').value=c; document.getElementById('pin').value='1234'; }
+function setUser(c){ document.getElementById('cedula').value=c; document.getElementById('pin').value=c; }
 
 async function login(){
   const cedula=document.getElementById('cedula').value.trim(); const secret=document.getElementById('pin').value;
@@ -390,6 +390,17 @@ async function restoreSession(){
   }
   document.getElementById('loginCard').style.display='none';
   document.getElementById('dash').style.display='block';
+  try{
+    const response=await authenticatedFetch('/api/v1/auth/me');
+    const current=await readJson(response);
+    if(!response.ok) throw new Error(current.message||'Sesión inválida');
+    user=current;
+    localStorage.setItem('asistencia_user',JSON.stringify(user));
+  }catch(error){
+    clearSession();
+    msg('loginMsg',error.message,'err');
+    return;
+  }
   showWelcome();
   const employeeSelect=document.getElementById('emp');
   if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }

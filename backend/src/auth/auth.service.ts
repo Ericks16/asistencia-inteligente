@@ -13,6 +13,20 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
+  async currentUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('Usuario inactivo o inexistente');
+    return {
+      id: user.id,
+      cedula: user.cedula,
+      role: user.role,
+      name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : user.cedula,
+    };
+  }
+
   async loginByCedula(dto: LoginCedulaDto) {
     const user = await this.prisma.user.findUnique({
       where: { cedula: dto.cedula },

@@ -1,6 +1,8 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginCedulaDto } from './dto/login-cedula.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -10,6 +12,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginCedulaDto) {
     return this.authService.loginByCedula(dto);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Req() req: { user: JwtPayload }) {
+    return this.authService.currentUser(req.user.sub);
   }
 
   @Post('refresh')
