@@ -19,16 +19,6 @@ export class ReportsController {
     return this.reports.employees();
   }
 
-  @Get('monthly-all')
-  @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
-  monthlyAll(
-    @Query('year', ParseIntPipe) year: number,
-    @Query('month', ParseIntPipe) month: number,
-  ) {
-    return this.reports.monthlyAll(year, month);
-  }
-
   @Get('monthly/:employeeId')
   monthly(
     @Req() req: { user: JwtPayload },

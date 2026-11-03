@@ -25,27 +25,6 @@ export class ReportsService {
     }));
   }
 
-  async monthlyAll(year: number, month: number) {
-    const employees = await this.employees();
-    const reports = await Promise.all(
-      employees.map(async (employee) => {
-        const report = await this.monthly(employee.id, year, month);
-        return {
-          employeeId: employee.id,
-          cedula: employee.cedula,
-          name: employee.name,
-          role: employee.role,
-          daysWorked: report.daysWorked,
-          absences: report.absences,
-          lateArrivalsCount: report.lateArrivalsCount,
-          totalOrdinaryMinutes: report.totalOrdinaryMinutes,
-          totalOvertimeMinutes: report.totalOvertimeMinutes,
-        };
-      }),
-    );
-    return { year, month, employees: reports };
-  }
-
   async monthly(employeeId: string, year: number, month: number) {
     const employee = await this.prisma.user.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException('Empleado no encontrado');

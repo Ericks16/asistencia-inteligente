@@ -379,11 +379,17 @@ async function downloadMonthlyAll(){
   const year=document.getElementById('year').value, month=document.getElementById('month').value;
   msg('repMsg','Generando reporte consolidado…');
   try{
-    const response=await authenticatedFetch(`/api/v1/reports/monthly-all?year=${year}&month=${month}`);
-    const data=await readJson(response);
-    if(!response.ok) throw new Error(data.message||'No se pudo generar el reporte.');
+    const employeesResponse=await authenticatedFetch('/api/v1/reports/employees');
+    const employees=await readJson(employeesResponse);
+    if(!employeesResponse.ok) throw new Error(employees.message||'No se pudieron cargar los empleados.');
+    const reports=await Promise.all(employees.map(async employee=>{
+      const response=await authenticatedFetch(`/api/v1/reports/monthly/${employee.id}?year=${year}&month=${month}`);
+      const report=await readJson(response);
+      if(!response.ok) throw new Error(report.message||`No se pudo cargar ${employee.name}.`);
+      return {...employee,...report};
+    }));
     const header=['Cédula','Empleado','Rol','Días trabajados','Faltas','Atrasos','Horas ordinarias','Minutos ordinarios','Horas extra','Minutos extra'];
-    const rows=data.employees.map(employee=>[
+    const rows=reports.map(employee=>[
       employee.cedula,employee.name,employee.role,employee.daysWorked,employee.absences,
       employee.lateArrivalsCount,formatMinutes(employee.totalOrdinaryMinutes),
       employee.totalOrdinaryMinutes,formatMinutes(employee.totalOvertimeMinutes),
