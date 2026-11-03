@@ -11,6 +11,20 @@ export class ReportsService {
     private readonly storage: StorageService,
   ) {}
 
+  async employees() {
+    const users = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE' },
+      include: { profile: true },
+      orderBy: [{ profile: { lastName: 'asc' } }, { profile: { firstName: 'asc' } }],
+    });
+    return users.map((user) => ({
+      id: user.id,
+      cedula: user.cedula,
+      name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : user.cedula,
+      role: user.role,
+    }));
+  }
+
   async monthly(employeeId: string, year: number, month: number) {
     const employee = await this.prisma.user.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException('Empleado no encontrado');

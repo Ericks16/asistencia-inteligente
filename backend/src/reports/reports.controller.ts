@@ -3,11 +3,21 @@ import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ForbiddenException } from '@nestjs/common';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/types/domain.types';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
+
+  @Get('employees')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  employees() {
+    return this.reports.employees();
+  }
 
   @Get('monthly/:employeeId')
   monthly(

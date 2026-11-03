@@ -134,8 +134,7 @@
       <div class="row">
         <div><label>Empleado</label>
           <select id="emp">
-            <option value="92ae49a3-ad6d-4a43-8bef-01373d79c154">María Pérez (1712345678)</option>
-            <option value="c53935dc-b91f-4e47-8f44-fd876618e74d">Juan Gómez (1798765432)</option>
+            <option value="">Cargando empleados…</option>
           </select>
         </div>
         <div><label>Año</label><input id="year" value="2026"></div>
@@ -335,7 +334,7 @@ async function login(){
     document.getElementById('loginCard').style.display='none';
     document.getElementById('dash').style.display='block';
     showWelcome();
-    renderStats(null); loadReport(); startLocation();
+    renderStats(null); loadEmployees(); loadReport(); startLocation();
   }catch(e){ msg('loginMsg',e.message,'err'); }
 }
 
@@ -371,6 +370,20 @@ async function loadReport(){
     }).join('');
     document.getElementById('repTable').innerHTML=`<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Ordinarias</th><th>Extra</th><th>Estado</th></tr></thead><tbody>${rows||'<tr><td colspan=6>Sin registros</td></tr>'}</tbody></table>`;
   }catch(e){ msg('repMsg',e.message,'err'); }
+}
+async function loadEmployees(){
+  if(user?.role!=='ADMIN') return;
+  const select=document.getElementById('emp');
+  try{
+    const response=await authenticatedFetch('/api/v1/reports/employees');
+    const employees=await readJson(response);
+    if(!response.ok) throw new Error(employees.message||'No se pudieron cargar los empleados.');
+    select.innerHTML=employees.map(employee=>`<option value="${employee.id}">${employee.name} (${employee.cedula})</option>`).join('');
+    if(user?.id && employees.some(employee=>employee.id===user.id)) select.value=user.id;
+  }catch(error){
+    select.innerHTML='<option value="">No hay empleados disponibles</option>';
+    msg('repMsg',error.message,'err');
+  }
 }
 
 // Cámara
@@ -466,6 +479,7 @@ async function restoreSession(){
   const employeeSelect=document.getElementById('emp');
   if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }
   renderStats(null);
+  await loadEmployees();
   await loadReport();
   startLocation();
 }
