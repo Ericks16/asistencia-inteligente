@@ -5,16 +5,25 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+
+type HttpRequest = {
+  method?: string;
+  url?: string;
+};
+
+type HttpResponse = {
+  status(code: number): HttpResponse;
+  json(body: object): void;
+};
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
-    const response = host.switchToHttp().getResponse<Response>();
-    const request = host.switchToHttp().getRequest<Request>();
+    const response = host.switchToHttp().getResponse<HttpResponse>();
+    const request = host.switchToHttp().getRequest<HttpRequest>();
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     const exceptionResponse = exception instanceof HttpException ? exception.getResponse() : null;
     const message = typeof exceptionResponse === 'object' && exceptionResponse !== null && 'message' in exceptionResponse
@@ -24,7 +33,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     if (status >= 500) {
       this.logger.error(
-        `${request.method} ${request.url} [${requestId}]`,
+        `${request.method ?? 'UNKNOWN'} ${request.url ?? 'UNKNOWN'} [${requestId}]`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
@@ -32,7 +41,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       message,
-      path: request.url,
+      path: request.url ?? 'unknown',
       timestamp: new Date().toISOString(),
       requestId,
     });
