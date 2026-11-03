@@ -3,7 +3,7 @@
   "installCommand": "cd backend && pnpm install --frozen-lockfile && pnpm prisma:generate",
   "buildCommand": "cd backend && pnpm build",
   "functions": {
-    "backend/api/**/*.ts": {
+    "api/**/*.ts": {
       "maxDuration": 60
     }
   },
