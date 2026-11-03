@@ -128,8 +128,9 @@ export function localDateInZone(date: Date, timeZone: string): string {
 }
 
 /**
- * Deduplica y empareja marcas de un mismo día: toma la PRIMERA entrada y la
- * ÚLTIMA salida. Marca el resto como duplicadas (nota informativa).
+ * Deduplica y empareja marcas de un mismo día: toma la ÚLTIMA entrada y la
+ * ÚLTIMA salida registradas. Cada nueva foto de entrada reemplaza la anterior
+ * en el resumen del día, mientras las marcas originales permanecen auditables.
  */
 export function pairStamps(
   stamps: AttendanceStamp[],
@@ -138,7 +139,7 @@ export function pairStamps(
   const ins = stamps.filter((s) => s.type === 'CHECK_IN').sort((a, b) => a.at.getTime() - b.at.getTime());
   const outs = stamps.filter((s) => s.type === 'CHECK_OUT').sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  const entry = ins[0] ?? null;
+  const entry = ins.length ? ins[ins.length - 1] : null;
   const exit = outs.length ? outs[outs.length - 1] : null;
   const duplicates = Math.max(0, ins.length - 1) + Math.max(0, outs.length - 1);
   return { entry, exit, duplicates };
@@ -307,4 +308,3 @@ export function computeMonthly(
     days,
   };
 }
-
