@@ -102,6 +102,7 @@
     <!-- Marcar asistencia -->
     <div class="card">
       <h2>Marcar asistencia <span style="font-size:12px;color:var(--muted);font-weight:400">(reconocimiento facial local)</span></h2>
+      <div style="margin-bottom:12px"><button class="ghost" onclick="enrollFace()">Registrar esta foto como mi rostro</button></div>
       <div class="warn" id="secureWarn" style="display:none">
         Tu navegador está en un origen NO seguro (<code>http://IP</code>). La cámara y el GPS solo funcionan en
         <code>localhost</code> o <code>https</code>. Para probar en el teléfono se requiere HTTPS.
@@ -219,6 +220,19 @@ async function verifyLocalFace(photo){
   const score=Math.max(0,1-distance);
   if(distance>0.6) throw new Error(`Rostro no coincide (similitud ${(score*100).toFixed(1)}%).`);
   return score;
+}
+async function enrollFace(){
+  if(!photoBlob){ msg('markMsg','Primero captura una foto frontal para registrar tu rostro.','err'); return; }
+  msg('markMsg','Registrando rostro…');
+  const fd=new FormData();
+  fd.append('photo',photoBlob,'rostro.jpg');
+  try{
+    const response=await authenticatedFetch('/api/v1/attendance/face-enroll',{method:'POST',body:fd});
+    const data=await readJson(response);
+    if(!response.ok) throw new Error(data.message||'No se pudo registrar el rostro.');
+    referenceFaceDescriptor=null;
+    msg('markMsg','Rostro registrado correctamente. Ya puedes probar la entrada.','ok');
+  }catch(error){ msg('markMsg','Error: '+error.message,'err'); }
 }
 async function authenticatedFetch(url, options={}, retry=true){
   const headers=new Headers(options.headers||{});

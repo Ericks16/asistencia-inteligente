@@ -42,6 +42,21 @@ export class AttendanceService {
     return this.storage.getPhoto(photoRef);
   }
 
+  async enrollOwnFace(user: JwtPayload, photo: Buffer) {
+    if (!photo?.length) throw new BadRequestException('La foto facial es obligatoria');
+    const stored = await this.storage.putPhoto(photo, user.sub);
+    const previous = await this.prisma.faceEmbedding.findUnique({ where: { userId: user.sub } });
+    await this.prisma.faceEmbedding.upsert({
+      where: { userId: user.sub },
+      create: { userId: user.sub, photoRef: stored.key, modelName: 'facenet' },
+      update: { photoRef: stored.key, modelName: 'facenet', version: { increment: 1 } },
+    });
+    if (previous?.photoRef && previous.photoRef !== stored.key) {
+      await this.storage.deletePhoto(previous.photoRef);
+    }
+    return { enrolled: true, photoHash: stored.hash };
+  }
+
   /** Registro individual (check-in / check-out). */
   async checkIn(user: JwtPayload, photo: Buffer, dto: CheckInDto, type: AttendanceType = 'CHECK_IN') {
     const gps = dto.gps ?? { latitude: 0, longitude: 0, accuracyM: 0, provider: 'none', isMock: false };

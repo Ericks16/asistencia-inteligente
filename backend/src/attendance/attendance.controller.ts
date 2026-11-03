@@ -60,6 +60,15 @@ export class AttendanceController {
     return this.attendance.checkInGroup(req.user, photo.buffer, dto);
   }
 
+  @Post('face-enroll')
+  @UseInterceptors(FileInterceptor('photo'))
+  enrollFace(
+    @Req() req: { user: JwtPayload },
+    @UploadedFile() photo: Express.Multer.File,
+  ) {
+    return this.attendance.enrollOwnFace(req.user, photo?.buffer);
+  }
+
   @Get('history/:employeeId')
   async history(
     @Req() req: { user: JwtPayload },
