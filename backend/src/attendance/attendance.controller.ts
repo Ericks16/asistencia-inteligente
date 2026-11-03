@@ -65,8 +65,9 @@ export class AttendanceController {
   enrollFace(
     @Req() req: { user: JwtPayload },
     @UploadedFile() photo: Express.Multer.File,
+    @Body() body: { descriptor?: string },
   ) {
-    return this.attendance.enrollOwnFace(req.user, photo?.buffer);
+    return this.attendance.enrollOwnFace(req.user, photo?.buffer, body.descriptor ?? '');
   }
 
   @Get('history/:employeeId')
@@ -98,12 +99,15 @@ export class AttendanceController {
   async faceReference(@Req() req: { user: JwtPayload }) {
     const embedding = await this.prisma.faceEmbedding.findUnique({
       where: { userId: req.user.sub },
-      select: { photoRef: true, photoData: true },
+      select: { photoRef: true, photoData: true, descriptor: true },
     });
     if (!embedding?.photoRef) {
       return { enrolled: false };
     }
 
+    if (embedding.descriptor) {
+      return { enrolled: true, descriptor: JSON.parse(embedding.descriptor) };
+    }
     const photo = await this.attendance.getReferencePhoto(embedding.photoRef, embedding.photoData);
     return {
       enrolled: true,

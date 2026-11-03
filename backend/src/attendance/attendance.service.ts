@@ -43,15 +43,24 @@ export class AttendanceService {
     return this.storage.getPhoto(photoRef);
   }
 
-  async enrollOwnFace(user: JwtPayload, photo: Buffer) {
+  async enrollOwnFace(user: JwtPayload, photo: Buffer, descriptor: string) {
     if (!photo?.length) throw new BadRequestException('La foto facial es obligatoria');
+    if (!descriptor) throw new BadRequestException('El descriptor facial es obligatorio');
+    try {
+      const parsed = JSON.parse(descriptor);
+      if (!Array.isArray(parsed) || parsed.length < 64 || parsed.some((value) => typeof value !== 'number')) {
+        throw new Error('formato inválido');
+      }
+    } catch {
+      throw new BadRequestException('El descriptor facial no es válido');
+    }
     const stored = await this.storage.putPhoto(photo, user.sub);
     const encrypted = this.storage.encryptForDatabase(photo);
     const previous = await this.prisma.faceEmbedding.findUnique({ where: { userId: user.sub } });
     await this.prisma.faceEmbedding.upsert({
       where: { userId: user.sub },
-      create: { userId: user.sub, photoRef: stored.key, photoData: encrypted.data, modelName: 'facenet' },
-      update: { photoRef: stored.key, photoData: encrypted.data, modelName: 'facenet', version: { increment: 1 } },
+      create: { userId: user.sub, photoRef: stored.key, photoData: encrypted.data, descriptor, modelName: 'facenet' },
+      update: { photoRef: stored.key, photoData: encrypted.data, descriptor, modelName: 'facenet', version: { increment: 1 } },
     });
     if (previous?.photoRef && previous.photoRef !== stored.key) {
       await this.storage.deletePhoto(previous.photoRef);

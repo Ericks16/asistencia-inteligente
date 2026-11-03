@@ -204,6 +204,10 @@ async function loadReferenceFace(){
   const data=await readJson(response);
   if(!response.ok) throw new Error(data.message||'No se pudo cargar la referencia facial.');
   if(!data.enrolled) throw new Error('No tienes una foto facial registrada todavía.');
+  if(data.descriptor){
+    referenceFaceDescriptor=new Float32Array(data.descriptor);
+    return referenceFaceDescriptor;
+  }
   const image=await faceapi.fetchImage(`data:${data.contentType};base64,${data.imageBase64}`);
   const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
   if(!result) throw new Error('No se detectó un rostro en tu foto registrada.');
@@ -227,6 +231,11 @@ async function enrollFace(){
   const fd=new FormData();
   fd.append('photo',photoBlob,'rostro.jpg');
   try{
+    await loadLocalFaceModels();
+    const image=await faceapi.fetchImage(URL.createObjectURL(photoBlob));
+    const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+    if(!result) throw new Error('No se detectó un rostro claro. Acércate y mejora la iluminación.');
+    fd.append('descriptor',JSON.stringify(Array.from(result.descriptor)));
     const response=await authenticatedFetch('/api/v1/attendance/face-enroll',{method:'POST',body:fd});
     const data=await readJson(response);
     if(!response.ok) throw new Error(data.message||'No se pudo registrar el rostro.');
