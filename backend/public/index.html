@@ -180,7 +180,7 @@ function logout(){
   msg('loginMsg','Sesión cerrada. Inicia sesión con tu cédula.','ok');
 }
 function showWelcome(){
-  document.getElementById('welcome').textContent='Bienvenido/a '+(user?.name||user?.cedula||'');
+  document.getElementById('welcome').textContent='Bienvenido '+(user?.name||user?.cedula||'');
 }
 function formatServerTime(value){
   return new Intl.DateTimeFormat('es-EC',{
@@ -208,15 +208,36 @@ async function loadLocalFaceModels(){
 }
 async function detectLocalFace(image){
   const attempts=[
-    new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.3}),
-    new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.2}),
-    new faceapi.TinyFaceDetectorOptions({inputSize:512,scoreThreshold:0.15})
+    new faceapi.TinyFaceDetectorOptions({inputSize:160,scoreThreshold:0.08}),
+    new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.12}),
+    new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.1}),
+    new faceapi.TinyFaceDetectorOptions({inputSize:512,scoreThreshold:0.08})
   ];
   for(const options of attempts){
-    const result=await faceapi.detectSingleFace(image,options).withFaceLandmarks().withFaceDescriptor();
-    if(result) return result;
+    const results=await faceapi.detectAllFaces(image,options).withFaceLandmarks().withFaceDescriptors();
+    if(results.length){
+      return results.sort((a,b)=>b.detection.box.area-a.detection.box.area)[0];
+    }
   }
   return null;
+}
+async function detectWithBrightness(blob){
+  const image=await faceapi.fetchImage(URL.createObjectURL(blob));
+  const width=image.naturalWidth||image.width;
+  const height=image.naturalHeight||image.height;
+  const canvas=document.createElement('canvas');
+  canvas.width=width;
+  canvas.height=height;
+  const context=canvas.getContext('2d');
+  context.drawImage(image,0,0);
+  const pixels=context.getImageData(0,0,width,height);
+  for(let i=0;i<pixels.data.length;i+=4){
+    pixels.data[i]=Math.min(255,pixels.data[i]*1.3+12);
+    pixels.data[i+1]=Math.min(255,pixels.data[i+1]*1.3+12);
+    pixels.data[i+2]=Math.min(255,pixels.data[i+2]*1.3+12);
+  }
+  context.putImageData(pixels,0,0);
+  return {original:image, enhanced:canvas};
 }
 async function loadReferenceFace(){
   if(referenceFaceDescriptor) return referenceFaceDescriptor;
@@ -238,8 +259,8 @@ async function loadReferenceFace(){
 async function verifyLocalFace(photo){
   await loadLocalFaceModels();
   const reference=await loadReferenceFace();
-  const image=await faceapi.fetchImage(URL.createObjectURL(photo));
-  const result=await detectLocalFace(image);
+  const images=await detectWithBrightness(photo);
+  const result=await detectLocalFace(images.original)||await detectLocalFace(images.enhanced);
   if(!result) throw new Error('No se detectó un rostro en la foto capturada.');
   const distance=faceapi.euclideanDistance(reference,result.descriptor);
   const score=Math.max(0,1-distance);
@@ -253,8 +274,8 @@ async function enrollFace(){
   fd.append('photo',photoBlob,'rostro.jpg');
   try{
     await loadLocalFaceModels();
-    const image=await faceapi.fetchImage(URL.createObjectURL(photoBlob));
-    const result=await detectLocalFace(image);
+    const images=await detectWithBrightness(photoBlob);
+    const result=await detectLocalFace(images.original)||await detectLocalFace(images.enhanced);
     if(!result) throw new Error('No se detectó un rostro claro. Acércate y mejora la iluminación.');
     fd.append('descriptor',JSON.stringify(Array.from(result.descriptor)));
     const response=await authenticatedFetch('/api/v1/attendance/face-enroll',{method:'POST',body:fd});
@@ -422,7 +443,9 @@ async function mark(type){
     const c=j.computed||{};
     const warning=j.warnings?.length?` · Aviso: ${j.warnings.join(' ')}`:'';
     const verification=j.verification==='LOCAL_FACE_API'?'rostro local verificado':j.verification==='MOCK'?'modo simulado':'AWS Rekognition';
-    msg('markMsg',`${type==='CHECK_IN'?'ENTRADA':'SALIDA'} registrada · hora Ecuador ${formatServerTime(j.serverTimestamp)} · ${verification} · match ${(j.faceMatchScore*100).toFixed(1)}% · extra del día: ${c.overtimeMinutes||0} min${warning}`,'ok');
+    const identifiedName=j.identifiedName||user?.name||user?.fullName||user?.cedula||'usuario autenticado';
+    const greeting=type==='CHECK_IN'?`Bienvenido ${identifiedName}`:`Nos vemos pronto ${identifiedName}`;
+    msg('markMsg',`${greeting} · ${type==='CHECK_IN'?'ENTRADA':'SALIDA'} registrada · hora Ecuador ${formatServerTime(j.serverTimestamp)} · ${verification} · match ${(j.faceMatchScore*100).toFixed(1)}% · extra del día: ${c.overtimeMinutes||0} min${warning}`,'ok');
     loadReport();
   }catch(e){ msg('markMsg','Error: '+e.message,'err'); }
 }
@@ -434,7 +457,6 @@ async function restoreSession(){
     return;
   }
   document.getElementById('loginCard').style.display='none';
-  document.getElementById('dash').style.display='block';
   try{
     const response=await authenticatedFetch('/api/v1/auth/me');
     const current=await readJson(response);
@@ -446,6 +468,7 @@ async function restoreSession(){
     msg('loginMsg',error.message,'err');
     return;
   }
+  document.getElementById('dash').style.display='block';
   showWelcome();
   const employeeSelect=document.getElementById('emp');
   if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }

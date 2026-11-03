@@ -146,10 +146,19 @@ export class AttendanceService {
       warnings.push('La asistencia se guardó, pero el resumen diario no está disponible.');
     }
 
+    const employee = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      include: { profile: true },
+    });
+    const identifiedName = employee?.profile
+      ? `${employee.profile.firstName} ${employee.profile.lastName}`.trim()
+      : employee?.cedula ?? user.sub;
+
     return {
       id: log.id,
       status,
       serverTimestamp: log.serverTimestamp,
+      identifiedName,
       faceMatchScore: matchScore,
       livenessScore: liveness.confidence,
       verification: this.isLocal ? 'LOCAL_FACE_API' : this.isMock ? 'MOCK' : 'AWS_REKOGNITION',
