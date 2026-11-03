@@ -139,7 +139,7 @@
         </div>
         <div><label>Año</label><input id="year" value="2026"></div>
         <div><label>Mes</label><input id="month" value="10" min="1" max="12"></div>
-        <div><button onclick="loadReport()">Ver reporte</button></div>
+        <div><button onclick="loadReport()">Ver reporte</button><button id="downloadAllBtn" class="ghost" onclick="downloadMonthlyAll()" style="display:none">Descargar todos (CSV)</button></div>
       </div>
       <div class="hint">Jornada: entrada <b>08:00</b> · salida <b>17:00</b> · almuerzo 1 h.<br>
       Horas extra = (minutos antes de 08:00) + (minutos después de 17:00).</div>
@@ -347,11 +347,15 @@ function renderStats(rep){
       <div class="stat"><div class="k">Salida</div><div class="v">17:00</div></div>`;
     return;
   }
+  function formatMinutes(minutes){
+    const total=Math.max(0,Number(minutes)||0);
+    return `${Math.floor(total/60)} h ${total%60} min`;
+  }
   s.innerHTML=`
     <div class="stat"><div class="k">Días trabajados</div><div class="v">${rep.daysWorked}</div></div>
     <div class="stat"><div class="k">Faltas</div><div class="v">${rep.absences}</div></div>
-    <div class="stat"><div class="k">Horas ordinarias</div><div class="v">${(rep.totalOrdinaryMinutes/60).toFixed(1)}<small>h</small></div></div>
-    <div class="stat"><div class="k">Horas extra</div><div class="v">${(rep.totalOvertimeMinutes/60).toFixed(2)}<small>h</small></div></div>
+    <div class="stat"><div class="k">Horas ordinarias</div><div class="v">${formatMinutes(rep.totalOrdinaryMinutes)}</div></div>
+    <div class="stat"><div class="k">Horas extra</div><div class="v">${formatMinutes(rep.totalOvertimeMinutes)}</div></div>
     <div class="stat"><div class="k">Atrasos</div><div class="v">${rep.lateArrivalsCount}</div></div>`;
 }
 
@@ -366,10 +370,34 @@ async function loadReport(){
     const rows=j.detail.map(d=>{
       let tag=d.status==='COMPLETE'?'<span class="tag ok">COMPLETO</span>':'<span class="tag missing">'+d.status+'</span>';
       if(d.overtimeMinutes>0) tag='<span class="tag ok">COMPLETO</span> <span class="tag late">+'+d.overtimeMinutes+'m extra</span>';
-      return `<tr><td>${d.date}</td><td>${d.entryTime||'—'}</td><td>${d.exitTime||'—'}</td><td>${(d.ordinaryMinutes/60).toFixed(2)}h</td><td><b>${(d.overtimeMinutes/60).toFixed(2)}h</b></td><td>${tag}</td></tr>`;
+      return `<tr><td>${d.date}</td><td>${d.entryTime||'—'}</td><td>${d.exitTime||'—'}</td><td>${formatMinutes(d.ordinaryMinutes)}</td><td><b>${formatMinutes(d.overtimeMinutes)}</b></td><td>${tag}</td></tr>`;
     }).join('');
     document.getElementById('repTable').innerHTML=`<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Ordinarias</th><th>Extra</th><th>Estado</th></tr></thead><tbody>${rows||'<tr><td colspan=6>Sin registros</td></tr>'}</tbody></table>`;
   }catch(e){ msg('repMsg',e.message,'err'); }
+}
+async function downloadMonthlyAll(){
+  const year=document.getElementById('year').value, month=document.getElementById('month').value;
+  msg('repMsg','Generando reporte consolidado…');
+  try{
+    const response=await authenticatedFetch(`/api/v1/reports/monthly-all?year=${year}&month=${month}`);
+    const data=await readJson(response);
+    if(!response.ok) throw new Error(data.message||'No se pudo generar el reporte.');
+    const header=['Cédula','Empleado','Rol','Días trabajados','Faltas','Atrasos','Horas ordinarias','Minutos ordinarios','Horas extra','Minutos extra'];
+    const rows=data.employees.map(employee=>[
+      employee.cedula,employee.name,employee.role,employee.daysWorked,employee.absences,
+      employee.lateArrivalsCount,formatMinutes(employee.totalOrdinaryMinutes),
+      employee.totalOrdinaryMinutes,formatMinutes(employee.totalOvertimeMinutes),
+      employee.totalOvertimeMinutes,
+    ]);
+    const csv=[header,...rows].map(row=>row.map(value=>`"${String(value??'').replace(/"/g,'""')}"`).join(';')).join('\r\n');
+    const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+    const link=document.createElement('a');
+    link.href=URL.createObjectURL(blob);
+    link.download=`reporte-asistencia-${year}-${String(month).padStart(2,'0')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    msg('repMsg','Reporte consolidado descargado.','ok');
+  }catch(error){ msg('repMsg',error.message,'err'); }
 }
 async function loadEmployees(){
   if(user?.role!=='ADMIN') return;
@@ -479,6 +507,7 @@ async function restoreSession(){
   const employeeSelect=document.getElementById('emp');
   if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }
   renderStats(null);
+  document.getElementById('downloadAllBtn').style.display=user?.role==='ADMIN'?'inline-block':'none';
   await loadEmployees();
   await loadReport();
   startLocation();
