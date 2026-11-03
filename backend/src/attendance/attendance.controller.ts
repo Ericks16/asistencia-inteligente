@@ -71,6 +71,7 @@ export class AttendanceController {
     if (req.user.role === 'EMPLOYEE' && req.user.sub !== employeeId) {
       throw new ForbiddenException('Solo puede ver su propio historial');
     }
+
     const items = await this.prisma.attendanceLog.findMany({
       where: {
         employeeId,
@@ -82,6 +83,24 @@ export class AttendanceController {
       orderBy: { serverTimestamp: 'asc' },
     });
     return { items };
+  }
+
+  @Get('face-reference')
+  async faceReference(@Req() req: { user: JwtPayload }) {
+    const embedding = await this.prisma.faceEmbedding.findUnique({
+      where: { userId: req.user.sub },
+      select: { photoRef: true },
+    });
+    if (!embedding?.photoRef) {
+      return { enrolled: false };
+    }
+
+    const photo = await this.attendance.getReferencePhoto(embedding.photoRef);
+    return {
+      enrolled: true,
+      contentType: 'image/jpeg',
+      imageBase64: photo.toString('base64'),
+    };
   }
 
   /** En multipart/form-data, los campos no-archivo llegan como strings. */

@@ -60,6 +60,7 @@
   @keyframes blink{50%{opacity:.25}}
   .warn{background:#5a2a12;color:#fbbf24;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:14px}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -100,7 +101,7 @@
 
     <!-- Marcar asistencia -->
     <div class="card">
-      <h2>Marcar asistencia <span style="font-size:12px;color:var(--muted);font-weight:400">(reconocimiento simulado en modo local)</span></h2>
+      <h2>Marcar asistencia <span style="font-size:12px;color:var(--muted);font-weight:400">(reconocimiento facial local)</span></h2>
       <div class="warn" id="secureWarn" style="display:none">
         Tu navegador está en un origen NO seguro (<code>http://IP</code>). La cámara y el GPS solo funcionan en
         <code>localhost</code> o <code>https</code>. Para probar en el teléfono se requiere HTTPS.
@@ -160,6 +161,8 @@ let user = JSON.parse(localStorage.getItem('asistencia_user') || 'null');
 let photoBlob = null;
 let videoStream = null;
 let gps = null;
+let faceModelsReady = false;
+let referenceFaceDescriptor = null;
 let deviceId = localStorage.getItem('asistencia_device') || (function(){const d='dev-'+Math.random().toString(36).slice(2,10);localStorage.setItem('asistencia_device',d);return d;})();
 
 function msg(id, text, cls){ const m=document.getElementById(id); m.className='msg '+(cls||''); m.textContent=text; }
@@ -181,6 +184,41 @@ function showWelcome(){
 async function readJson(response){
   const text=await response.text();
   try{return text?JSON.parse(text):{};}catch(_){throw new Error(`El servidor respondió ${response.status} sin un JSON válido.`);}
+}
+async function loadLocalFaceModels(){
+  if(faceModelsReady) return true;
+  const modelUrl='https://justadudewhohacks.github.io/face-api.js/models';
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl),
+    faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl),
+    faceapi.nets.faceRecognitionNet.loadFromUri(modelUrl)
+  ]);
+  faceModelsReady=true;
+  return true;
+}
+async function loadReferenceFace(){
+  if(referenceFaceDescriptor) return referenceFaceDescriptor;
+  await loadLocalFaceModels();
+  const response=await authenticatedFetch('/api/v1/attendance/face-reference');
+  const data=await readJson(response);
+  if(!response.ok) throw new Error(data.message||'No se pudo cargar la referencia facial.');
+  if(!data.enrolled) throw new Error('No tienes una foto facial registrada todavía.');
+  const image=await faceapi.fetchImage(`data:${data.contentType};base64,${data.imageBase64}`);
+  const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+  if(!result) throw new Error('No se detectó un rostro en tu foto registrada.');
+  referenceFaceDescriptor=result.descriptor;
+  return referenceFaceDescriptor;
+}
+async function verifyLocalFace(photo){
+  await loadLocalFaceModels();
+  const reference=await loadReferenceFace();
+  const image=await faceapi.fetchImage(URL.createObjectURL(photo));
+  const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+  if(!result) throw new Error('No se detectó un rostro en la foto capturada.');
+  const distance=faceapi.euclideanDistance(reference,result.descriptor);
+  const score=Math.max(0,1-distance);
+  if(distance>0.6) throw new Error(`Rostro no coincide (similitud ${(score*100).toFixed(1)}%).`);
+  return score;
 }
 async function authenticatedFetch(url, options={}, retry=true){
   const headers=new Headers(options.headers||{});
@@ -323,6 +361,10 @@ async function mark(type){
   if(!photoBlob){ msg('markMsg','Primero captura una foto con la cámara.','err'); return; }
   if(!gps){ msg('markMsg','Esperando ubicación GPS…','err'); return; }
   msg('markMsg','Enviando… ('+type+')');
+  try{
+    const localScore=await verifyLocalFace(photoBlob);
+    msg('markMsg',`Rostro verificado localmente (${(localScore*100).toFixed(1)}%). Enviando…`);
+  }catch(e){ msg('markMsg',e.message,'err'); return; }
   const fd=new FormData();
   fd.append('photo',photoBlob,'captura.jpg');
   fd.append('gps',JSON.stringify(gps));
