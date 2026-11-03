@@ -16,6 +16,11 @@ export interface StoredPhoto {
   hash: string;
 }
 
+export interface EncryptedPhoto {
+  data: string;
+  hash: string;
+}
+
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
@@ -72,6 +77,20 @@ export class StorageService {
     }
 
     return { key, hash };
+  }
+
+  encryptForDatabase(photo: Buffer): EncryptedPhoto {
+    if (!photo?.length) throw new BadRequestException('La foto está vacía');
+    const hash = createHash('sha256').update(photo).digest('hex');
+    const encrypted = encryptAes256Gcm(photo, this.encryptionKey);
+    return { data: Buffer.from(JSON.stringify(encrypted), 'utf8').toString('base64'), hash };
+  }
+
+  decryptFromDatabase(data: string): Buffer {
+    return decryptAes256Gcm(
+      JSON.parse(Buffer.from(data, 'base64').toString('utf8')),
+      this.encryptionKey,
+    );
   }
 
   async deletePhoto(key: string): Promise<void> {

@@ -203,6 +203,7 @@ model FaceEmbedding {
 
   vector     Unsupported("vector(512)")? // embedding facial (pgvector)
   photoRef   String?                      // S3 key de la foto de referencia (cifrada)
+  photoData  String?   @db.Text           // Foto facial cifrada para fallback serverless
   modelName  String  @default("rekognition") // rekognition | facenet
   version    Int     @default(1)
   isPrimary  Boolean @default(true)

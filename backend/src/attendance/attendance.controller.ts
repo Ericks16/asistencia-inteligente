@@ -98,13 +98,13 @@ export class AttendanceController {
   async faceReference(@Req() req: { user: JwtPayload }) {
     const embedding = await this.prisma.faceEmbedding.findUnique({
       where: { userId: req.user.sub },
-      select: { photoRef: true },
+      select: { photoRef: true, photoData: true },
     });
     if (!embedding?.photoRef) {
       return { enrolled: false };
     }
 
-    const photo = await this.attendance.getReferencePhoto(embedding.photoRef);
+    const photo = await this.attendance.getReferencePhoto(embedding.photoRef, embedding.photoData);
     return {
       enrolled: true,
       contentType: 'image/jpeg',

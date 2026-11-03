@@ -38,18 +38,20 @@ export class AttendanceService {
     return (this.cfg.get('FACE_PROVIDER') ?? 'mock') === 'local';
   }
 
-  async getReferencePhoto(photoRef: string): Promise<Buffer> {
+  async getReferencePhoto(photoRef: string, photoData?: string | null): Promise<Buffer> {
+    if (photoData) return this.storage.decryptFromDatabase(photoData);
     return this.storage.getPhoto(photoRef);
   }
 
   async enrollOwnFace(user: JwtPayload, photo: Buffer) {
     if (!photo?.length) throw new BadRequestException('La foto facial es obligatoria');
     const stored = await this.storage.putPhoto(photo, user.sub);
+    const encrypted = this.storage.encryptForDatabase(photo);
     const previous = await this.prisma.faceEmbedding.findUnique({ where: { userId: user.sub } });
     await this.prisma.faceEmbedding.upsert({
       where: { userId: user.sub },
-      create: { userId: user.sub, photoRef: stored.key, modelName: 'facenet' },
-      update: { photoRef: stored.key, modelName: 'facenet', version: { increment: 1 } },
+      create: { userId: user.sub, photoRef: stored.key, photoData: encrypted.data, modelName: 'facenet' },
+      update: { photoRef: stored.key, photoData: encrypted.data, modelName: 'facenet', version: { increment: 1 } },
     });
     if (previous?.photoRef && previous.photoRef !== stored.key) {
       await this.storage.deletePhoto(previous.photoRef);
@@ -85,7 +87,7 @@ export class AttendanceService {
       if (!ref?.photoRef) {
         throw new BadRequestException('El empleado no tiene rostro registrado (enrollment pendiente)');
       }
-      const referencePhoto = await this.storage.getPhoto(ref.photoRef);
+      const referencePhoto = await this.getReferencePhoto(ref.photoRef, ref.photoData);
       ({ matchScore, matched } = await this.face.compareFace(photo, referencePhoto));
     }
 
@@ -257,7 +259,7 @@ export class AttendanceService {
     for (const face of faces) {
       let best: { score: number; employee: (typeof employees)[number] } | null = null;
       for (const emp of employees) {
-        const referencePhoto = await this.storage.getPhoto(emp.photoRef!);
+        const referencePhoto = await this.getReferencePhoto(emp.photoRef!, emp.photoData);
         const { matchScore, matched } = await this.face.compareFace(photo, referencePhoto);
         if (matched && (!best || matchScore > best.score)) {
           best = { score: matchScore, employee: emp };

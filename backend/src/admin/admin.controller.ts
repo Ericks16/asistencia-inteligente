@@ -46,10 +46,11 @@ export class AdminController {
 
     const previous = await this.prisma.faceEmbedding.findUnique({ where: { userId: employeeId } });
     const stored = await this.storage.putPhoto(photo.buffer, employeeId);
+    const encrypted = this.storage.encryptForDatabase(photo.buffer);
     await this.prisma.faceEmbedding.upsert({
       where: { userId: employeeId },
-      create: { userId: employeeId, photoRef: stored.key, modelName: 'rekognition' },
-      update: { photoRef: stored.key, modelName: 'rekognition', version: { increment: 1 } },
+      create: { userId: employeeId, photoRef: stored.key, photoData: encrypted.data, modelName: 'rekognition' },
+      update: { photoRef: stored.key, photoData: encrypted.data, modelName: 'rekognition', version: { increment: 1 } },
     });
     if (previous?.photoRef && previous.photoRef !== stored.key) {
       await this.storage.deletePhoto(previous.photoRef);
