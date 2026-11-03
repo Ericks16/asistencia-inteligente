@@ -5,6 +5,7 @@ import { verifySecret } from './password.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginCedulaDto } from './dto/login-cedula.dto';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { Role } from '../common/types/domain.types';
 
 @Injectable()
 export class AuthService {
@@ -19,10 +20,11 @@ export class AuthService {
       include: { profile: true },
     });
     if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('Usuario inactivo o inexistente');
+    const role = this.roleForUser(user.cedula, user.profile);
     return {
       id: user.id,
       cedula: user.cedula,
-      role: user.role,
+      role,
       name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}`.trim() : user.cedula,
     };
   }
@@ -55,7 +57,8 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await this.audit('LOGIN', 'user', user.id, user.id, null);
 
-    return this.issueTokens(user.id, user.cedula, user.role, dto.deviceId, undefined, user.profile);
+    const role = this.roleForUser(user.cedula, user.profile);
+    return this.issueTokens(user.id, user.cedula, role, dto.deviceId, undefined, user.profile);
   }
 
   async refresh(refreshToken: string) {
@@ -82,7 +85,8 @@ export class AuthService {
 
     // Rotación: revocar el actual y emitir uno nuevo.
     await this.prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-    return this.issueTokens(user.id, user.cedula, user.role, undefined, stored.id, user.profile);
+    const role = this.roleForUser(user.cedula, user.profile);
+    return this.issueTokens(user.id, user.cedula, role, undefined, stored.id, user.profile);
   }
 
   async logout(refreshToken: string) {
@@ -130,6 +134,20 @@ export class AuthService {
 
   private sha256(s: string) {
     return createHash('sha256').update(s).digest('hex');
+  }
+
+  private roleForUser(
+    cedula: string,
+    profile?: { firstName: string; lastName: string } | null,
+  ): Role {
+    const normalize = (value: string) =>
+      value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleUpperCase('es-EC');
+    const fullName = profile ? `${normalize(profile.firstName)} ${normalize(profile.lastName)}` : '';
+    const administrators = new Set([
+      'ERICK SEBASTIAN ERAZO RODRIGUEZ',
+      'ERIKA SANTILLAN',
+    ]);
+    return administrators.has(fullName) ? Role.ADMIN : Role.EMPLOYEE;
   }
 
   private async audit(action: any, entity: string, entityId: string, actorId: string, meta: any) {

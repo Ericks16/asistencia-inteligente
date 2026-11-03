@@ -81,11 +81,6 @@
         <input id="cedula" placeholder="1712345678">
         <label>PIN</label>
         <input id="pin" type="password" placeholder="1234">
-        <div class="users">
-          <span class="chip" onclick="setUser('1712345678')">María Pérez (1712345678)</span>
-          <span class="chip" onclick="setUser('1798765432')">Juan Gómez (1798765432)</span>
-          <span class="chip" onclick="setUser('0000000001')">Admin (0000000001)</span>
-        </div>
         <div style="margin-top:14px"><button onclick="login()">Entrar</button></div>
         <div class="msg" id="loginMsg"></div>
       </div>
@@ -318,8 +313,6 @@ async function health(){
     document.getElementById('healthText').textContent=j.status==='ok'?'API en línea · DB '+j.database:'sin conexión';
   }catch(e){ document.getElementById('dot').className='dot off'; document.getElementById('healthText').textContent='sin conexión'; }
 }
-
-function setUser(c){ document.getElementById('cedula').value=c; document.getElementById('pin').value=c; }
 
 async function login(){
   const cedula=document.getElementById('cedula').value.trim(); const secret=document.getElementById('pin').value;

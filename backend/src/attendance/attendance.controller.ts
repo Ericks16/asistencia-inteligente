@@ -18,6 +18,9 @@ import { CheckInGroupDto } from './dto/check-in-group.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/types/domain.types';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard)
@@ -50,6 +53,8 @@ export class AttendanceController {
   }
 
   @Post('check-in-group')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
   @UseInterceptors(FileInterceptor('photo'))
   checkInGroup(
     @Req() req: { user: JwtPayload },
