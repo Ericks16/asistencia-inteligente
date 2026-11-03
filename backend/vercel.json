@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/**/*.ts": {
+    "api/v1/**/*.ts": {
       "maxDuration": 60
     }
   },
