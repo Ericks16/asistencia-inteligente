@@ -94,6 +94,7 @@
 
   <!-- Dashboard -->
   <div id="dash" style="display:none">
+    <div style="text-align:right;margin-bottom:10px"><button class="ghost" onclick="logout()">Cerrar sesión</button></div>
     <div class="grid" id="stats"></div>
 
     <!-- Marcar asistencia -->
@@ -161,6 +162,18 @@ let gps = null;
 let deviceId = localStorage.getItem('asistencia_device') || (function(){const d='dev-'+Math.random().toString(36).slice(2,10);localStorage.setItem('asistencia_device',d);return d;})();
 
 function msg(id, text, cls){ const m=document.getElementById(id); m.className='msg '+(cls||''); m.textContent=text; }
+function clearSession(){
+  localStorage.removeItem('asistencia_token');
+  localStorage.removeItem('asistencia_refresh_token');
+  localStorage.removeItem('asistencia_user');
+  token=''; refreshToken=''; user=null;
+  document.getElementById('loginCard').style.display='block';
+  document.getElementById('dash').style.display='none';
+}
+function logout(){
+  clearSession();
+  msg('loginMsg','Sesión cerrada. Inicia sesión con tu cédula.','ok');
+}
 async function readJson(response){
   const text=await response.text();
   try{return text?JSON.parse(text):{};}catch(_){throw new Error(`El servidor respondió ${response.status} sin un JSON válido.`);}
@@ -171,11 +184,7 @@ async function authenticatedFetch(url, options={}, retry=true){
   const response=await fetch(url,{...options,headers});
   if(response.status!==401 || !retry) return response;
   if(!refreshToken){
-    localStorage.removeItem('asistencia_token');
-    localStorage.removeItem('asistencia_user');
-    token=''; user=null;
-    document.getElementById('loginCard').style.display='block';
-    document.getElementById('dash').style.display='none';
+    clearSession();
     throw new Error('La sesión expiró. Inicia sesión nuevamente.');
   }
   const refreshResponse=await fetch('/api/v1/auth/refresh',{
@@ -184,13 +193,7 @@ async function authenticatedFetch(url, options={}, retry=true){
     body:JSON.stringify({refreshToken})
   });
   if(!refreshResponse.ok){
-    localStorage.removeItem('asistencia_token');
-    localStorage.removeItem('asistencia_refresh_token');
-    localStorage.removeItem('asistencia_user');
-    token=''; refreshToken='';
-    user=null;
-    document.getElementById('loginCard').style.display='block';
-    document.getElementById('dash').style.display='none';
+    clearSession();
     throw new Error('La sesión expiró. Inicia sesión nuevamente.');
   }
   const refreshed=await readJson(refreshResponse);
@@ -333,7 +336,20 @@ async function mark(type){
 }
 
 health();
-if(token && user){ document.getElementById('loginCard').style.display='none'; document.getElementById('dash').style.display='block'; const employeeSelect=document.getElementById('emp'); if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; } renderStats(null); loadReport(); startLocation(); }
+async function restoreSession(){
+  if(!token || !user || !refreshToken){
+    clearSession();
+    return;
+  }
+  document.getElementById('loginCard').style.display='none';
+  document.getElementById('dash').style.display='block';
+  const employeeSelect=document.getElementById('emp');
+  if(user.role==='EMPLOYEE'){ employeeSelect.value=user.id; employeeSelect.disabled=true; }
+  renderStats(null);
+  await loadReport();
+  startLocation();
+}
+restoreSession();
 </script>
 </body>
 </html>
