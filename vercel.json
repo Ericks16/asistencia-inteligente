@@ -7,6 +7,12 @@
       "maxDuration": 60
     }
   },
+  "rewrites": [
+    {
+      "source": "/api/v1/auth/login-cedula",
+      "destination": "/api/login-cedula"
+    }
+  ],
   "crons": [
     {
       "path": "/api/v1/retention/purge",
