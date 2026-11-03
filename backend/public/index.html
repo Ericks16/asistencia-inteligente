@@ -338,6 +338,10 @@ async function login(){
   }catch(e){ msg('loginMsg',e.message,'err'); }
 }
 
+function formatMinutes(minutes){
+  const total=Math.max(0,Number(minutes)||0);
+  return `${Math.floor(total/60)} h ${total%60} min`;
+}
 function renderStats(rep){
   const s=document.getElementById('stats');
   if(!rep){
@@ -346,10 +350,6 @@ function renderStats(rep){
       <div class="stat"><div class="k">Entrada</div><div class="v">08:00</div></div>
       <div class="stat"><div class="k">Salida</div><div class="v">17:00</div></div>`;
     return;
-  }
-  function formatMinutes(minutes){
-    const total=Math.max(0,Number(minutes)||0);
-    return `${Math.floor(total/60)} h ${total%60} min`;
   }
   s.innerHTML=`
     <div class="stat"><div class="k">Días trabajados</div><div class="v">${rep.daysWorked}</div></div>
