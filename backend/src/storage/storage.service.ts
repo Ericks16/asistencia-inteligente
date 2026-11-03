@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, GetObjectCommandOutput, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, unlink, writeFile } from 'fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
-import { encryptAes256Gcm } from '../attendance/crypto.util';
+import { decryptAes256Gcm, encryptAes256Gcm } from '../attendance/crypto.util';
 
 type AwsCommandClient = {
   send<Input extends object, Output extends object>(command: Input): Promise<Output>;
@@ -81,10 +81,30 @@ export class StorageService {
       );
       return;
     }
+
     try {
       await unlink(join(this.localDir, key));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+
+  async getPhoto(key: string): Promise<Buffer> {
+    let encryptedBytes: Buffer;
+    if (this.provider === 's3') {
+      const result = await this.s3Commands!.send<GetObjectCommand, GetObjectCommandOutput>(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!result.Body) throw new Error('La foto de referencia no tiene contenido');
+      encryptedBytes = Buffer.from(await result.Body.transformToByteArray());
+    } else {
+      encryptedBytes = await readFile(join(this.localDir, key));
+    }
+
+    try {
+      return decryptAes256Gcm(JSON.parse(encryptedBytes.toString('utf8')), this.encryptionKey);
+    } catch (error) {
+      throw new Error(`No se pudo descifrar la foto de referencia: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

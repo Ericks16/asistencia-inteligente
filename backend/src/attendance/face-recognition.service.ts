@@ -32,7 +32,7 @@ export interface MatchResult {
 
 export interface IFaceRecognition {
   detectFaces(imageBytes: Buffer): Promise<DetectedFace[]>;
-  compareFace(imageBytes: Buffer, targetImageRef: string): Promise<MatchResult>;
+  compareFace(imageBytes: Buffer, targetImageBytes: Buffer): Promise<MatchResult>;
   verifyLiveness(sessionId: string): Promise<LivenessResult>;
 }
 
@@ -70,16 +70,14 @@ export class RekognitionFaceService implements IFaceRecognition {
     }));
   }
 
-  async compareFace(imageBytes: Buffer, targetImageRef: string): Promise<MatchResult> {
-    // targetImageRef apunta a la foto de referencia cifrada en S3; se resuelve a
-    // una URL firmada o se descarga/descifra antes de comparar.
+  async compareFace(imageBytes: Buffer, targetImageBytes: Buffer): Promise<MatchResult> {
     const res = await this.client.send<
       CompareFacesCommand,
       CompareFacesCommandOutput
     >(
       new CompareFacesCommand({
         SourceImage: { Bytes: imageBytes },
-        TargetImage: { S3Object: { Bucket: process.env.AWS_S3_BUCKET, Name: targetImageRef } },
+        TargetImage: { Bytes: targetImageBytes },
         SimilarityThreshold: this.threshold * 100,
       }),
     );

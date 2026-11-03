@@ -8,8 +8,12 @@ import {
   Patch,
   Query,
   Req,
+  Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -17,6 +21,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { Role } from '../common/types/domain.types';
+import { StorageService } from '../storage/storage.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -25,7 +30,33 @@ export class AdminController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
+
+  @Post('employees/:employeeId/face')
+  @UseInterceptors(FileInterceptor('photo'))
+  async enrollFace(
+    @Req() req: { user: JwtPayload },
+    @Param('employeeId') employeeId: string,
+    @UploadedFile() photo: Express.Multer.File,
+  ) {
+    if (!photo?.buffer?.length) throw new BadRequestException('La foto facial es obligatoria');
+    const employee = await this.prisma.user.findUnique({ where: { id: employeeId } });
+    if (!employee) throw new NotFoundException('Empleado no encontrado');
+
+    const previous = await this.prisma.faceEmbedding.findUnique({ where: { userId: employeeId } });
+    const stored = await this.storage.putPhoto(photo.buffer, employeeId);
+    await this.prisma.faceEmbedding.upsert({
+      where: { userId: employeeId },
+      create: { userId: employeeId, photoRef: stored.key, modelName: 'rekognition' },
+      update: { photoRef: stored.key, modelName: 'rekognition', version: { increment: 1 } },
+    });
+    if (previous?.photoRef && previous.photoRef !== stored.key) {
+      await this.storage.deletePhoto(previous.photoRef);
+    }
+    await this.audit.record(req.user.sub, 'FACE_ENROLLMENT', 'users', employeeId, null, { photoHash: stored.hash });
+    return { employeeId, enrolled: true };
+  }
 
   @Patch('attendance/:id')
   async patchAttendance(

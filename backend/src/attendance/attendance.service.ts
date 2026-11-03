@@ -62,7 +62,8 @@ export class AttendanceService {
       if (!ref?.photoRef) {
         throw new BadRequestException('El empleado no tiene rostro registrado (enrollment pendiente)');
       }
-      ({ matchScore, matched } = await this.face.compareFace(photo, ref.photoRef));
+      const referencePhoto = await this.storage.getPhoto(ref.photoRef);
+      ({ matchScore, matched } = await this.face.compareFace(photo, referencePhoto));
     }
 
     const status: AttendanceStatus =
@@ -233,7 +234,8 @@ export class AttendanceService {
     for (const face of faces) {
       let best: { score: number; employee: (typeof employees)[number] } | null = null;
       for (const emp of employees) {
-        const { matchScore, matched } = await this.face.compareFace(photo, emp.photoRef!);
+        const referencePhoto = await this.storage.getPhoto(emp.photoRef!);
+        const { matchScore, matched } = await this.face.compareFace(photo, referencePhoto);
         if (matched && (!best || matchScore > best.score)) {
           best = { score: matchScore, employee: emp };
         }
