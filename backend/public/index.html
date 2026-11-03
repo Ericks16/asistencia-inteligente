@@ -197,6 +197,18 @@ async function loadLocalFaceModels(){
   faceModelsReady=true;
   return true;
 }
+async function detectLocalFace(image){
+  const attempts=[
+    new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.3}),
+    new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.2}),
+    new faceapi.TinyFaceDetectorOptions({inputSize:512,scoreThreshold:0.15})
+  ];
+  for(const options of attempts){
+    const result=await faceapi.detectSingleFace(image,options).withFaceLandmarks().withFaceDescriptor();
+    if(result) return result;
+  }
+  return null;
+}
 async function loadReferenceFace(){
   if(referenceFaceDescriptor) return referenceFaceDescriptor;
   await loadLocalFaceModels();
@@ -209,7 +221,7 @@ async function loadReferenceFace(){
     return referenceFaceDescriptor;
   }
   const image=await faceapi.fetchImage(`data:${data.contentType};base64,${data.imageBase64}`);
-  const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+  const result=await detectLocalFace(image);
   if(!result) throw new Error('No se detectó un rostro en tu foto registrada.');
   referenceFaceDescriptor=result.descriptor;
   return referenceFaceDescriptor;
@@ -218,7 +230,7 @@ async function verifyLocalFace(photo){
   await loadLocalFaceModels();
   const reference=await loadReferenceFace();
   const image=await faceapi.fetchImage(URL.createObjectURL(photo));
-  const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+  const result=await detectLocalFace(image);
   if(!result) throw new Error('No se detectó un rostro en la foto capturada.');
   const distance=faceapi.euclideanDistance(reference,result.descriptor);
   const score=Math.max(0,1-distance);
@@ -233,7 +245,7 @@ async function enrollFace(){
   try{
     await loadLocalFaceModels();
     const image=await faceapi.fetchImage(URL.createObjectURL(photoBlob));
-    const result=await faceapi.detectSingleFace(image,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+    const result=await detectLocalFace(image);
     if(!result) throw new Error('No se detectó un rostro claro. Acércate y mejora la iluminación.');
     fd.append('descriptor',JSON.stringify(Array.from(result.descriptor)));
     const response=await authenticatedFetch('/api/v1/attendance/face-enroll',{method:'POST',body:fd});
