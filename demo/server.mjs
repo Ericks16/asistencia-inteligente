@@ -29,30 +29,12 @@ const CERT_PATH = path.join(PUBLIC_DIR, '..', 'certs', 'server.pfx');
 // ---------------------------------------------------------------------------
 // "Base de datos" en memoria
 // ---------------------------------------------------------------------------
-const users = [
-  { id: 'u-admin', cedula: '0000000001', pin: '1234', role: 'ADMIN', name: 'Administrador General' },
-  { id: 'u-001', cedula: '1712345678', pin: '1234', role: 'EMPLOYEE', name: 'María Pérez' },
-  { id: 'u-002', cedula: '1798765432', pin: '1234', role: 'EMPLOYEE', name: 'Juan Gómez' },
-  { id: 'u-003', cedula: '1755555555', pin: '1234', role: 'EMPLOYEE', name: 'Ana Torres' },
-];
+const users = [];
 
 /** @type {any[]} */
 const logs = [];
 let seq = 1;
 const nonces = new Set();
-
-// Semilla: asistencia de María Pérez (u-001) en octubre 2026, incluido el caso borde.
-function iso(day, hhmm) {
-  return `2026-10-${String(day).padStart(2, '0')}T${hhmm}:00-05:00`;
-}
-[
-  ['27', '08:02', '17:05'],
-  ['28', '07:15', '18:30'], // ← caso borde: extra 45 + 90 = 135 min
-  ['29', '08:30', '17:00'], // atraso 30 min
-].forEach(([day, entry, exit]) => {
-  logs.push({ id: `seed-${seq++}`, employeeId: 'u-001', type: 'CHECK_IN', serverTimestamp: new Date(iso(day, entry)), status: 'VALID', gpsLat: -0.18, gpsLng: -78.49 });
-  logs.push({ id: `seed-${seq++}`, employeeId: 'u-001', type: 'CHECK_OUT', serverTimestamp: new Date(iso(day, exit)), status: 'VALID', gpsLat: -0.18, gpsLng: -78.49 });
-});
 
 // ---------------------------------------------------------------------------
 // Helpers HTTP
@@ -142,10 +124,7 @@ table{border-collapse:collapse;width:100%}td,th{border:1px solid #e5e7eb;padding
 <body><h1>✅ API de Asistencia Inteligente (demo local)</h1>
 <p>Servidor activo en <code>http://localhost:${PORT}</code>. Mismo contrato que la OpenAPI; persiste en memoria.</p>
 <h2>Credenciales de prueba</h2>
-<table><tr><th>Cédula</th><th>PIN</th><th>Rol</th></tr>
-<tr><td>0000000001</td><td>1234</td><td>ADMIN</td></tr>
-<tr><td>1712345678</td><td>1234</td><td>EMPLEADO (María Pérez)</td></tr>
-<tr><td>1798765432</td><td>1234</td><td>EMPLEADO (Juan Gómez)</td></tr></table>
+<p>No hay credenciales demo. Use el backend conectado a la base de datos configurada.</p>
 <h2>Prueba rápida (PowerShell)</h2>
 <pre># 1) Login
 \$t = (Invoke-RestMethod -Method Post -Uri http://localhost:${PORT}/api/v1/auth/login-cedula -ContentType 'application/json' -Body '{"cedula":"1712345678","secret":"1234"}').accessToken
@@ -221,17 +200,13 @@ Invoke-RestMethod -Uri "http://localhost:${PORT}/api/v1/reports/monthly/u-001?ye
     }
 
     if (method === 'POST' && path === '/api/v1/attendance/check-in-group') {
-      const identified = [
-        { employeeId: 'u-001', name: 'María Pérez', matchScore: 0.97, boundingBox: { left: 0.05, top: 0.1, width: 0.2, height: 0.25 } },
-        { employeeId: 'u-002', name: 'Juan Gómez', matchScore: 0.96, boundingBox: { left: 0.4, top: 0.1, width: 0.2, height: 0.25 } },
-        { employeeId: 'u-003', name: 'Ana Torres', matchScore: 0.98, boundingBox: { left: 0.72, top: 0.1, width: 0.2, height: 0.25 } },
-      ];
+      const identified = [];
       return send(res, 202, {
         sessionId: `g-${seq++}`,
         status: 'COMPLETED',
-        totalFacesDetected: 4,
+        totalFacesDetected: 0,
         identified,
-        unidentifiedCount: 1,
+        unidentifiedCount: 0,
       });
     }
 
