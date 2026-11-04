@@ -14,6 +14,7 @@ backend/src/generated/prisma/
 # Local database and photo storage
 backend/data/
 **/data/
+PERSONAL IGNIS/
 
 # Local TLS certificates and generated keys
 backend/certs/*.pfx

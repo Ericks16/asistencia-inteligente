@@ -4,6 +4,11 @@ const prisma = new PrismaClient();
 const keepNames = new Set([
   'ERICK SEBASTIAN ERAZO RODRIGUEZ',
   'ERIKA SANTILLAN',
+  'JAIME HIDALGO',
+]);
+const adminNames = new Set([
+  'ERICK SEBASTIAN ERAZO RODRIGUEZ',
+  'ERIKA SANTILLAN',
 ]);
 
 function normalize(value) {
@@ -48,10 +53,18 @@ async function main() {
     const deletedUsers = await tx.user.deleteMany({
       where: { id: { notIn: keepIds } },
     });
-    await tx.user.updateMany({
-      where: { id: { in: keepIds } },
-      data: { role: 'ADMIN', status: 'ACTIVE' },
-    });
+    for (const user of keep) {
+      const name = user.profile
+        ? normalize(`${user.profile.firstName} ${user.profile.lastName}`)
+        : '';
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          role: adminNames.has(name) ? 'ADMIN' : 'EMPLOYEE',
+          status: 'ACTIVE',
+        },
+      });
+    }
 
     return {
       matches: matches.count,
